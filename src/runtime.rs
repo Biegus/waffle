@@ -162,14 +162,16 @@ impl Runtime {
         let endpoint = endpoint.get(self);
         let kind = endpoint.kind;
 
-        let url = self.build_url(endpoint, env, &pparams.unwrap_or_default()).unwrap();
+        let url = self
+            .build_url(endpoint, env, &pparams.unwrap_or_default())
+            .unwrap();
         let payload_str = payload.clone().unwrap_or("NONE".to_string());
         self.tunnel.log(&format!("sending {payload_str} to {url}"));
         let mut builder = self
             .client
             .request(
                 reqwest::Method::from_bytes(format!("{kind:?}").as_bytes()).unwrap(),
-                url
+                url,
             )
             .query(&params)
             .body(payload.unwrap_or_default())
