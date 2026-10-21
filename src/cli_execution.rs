@@ -88,8 +88,9 @@ fn handle_payload_mod(
 fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> {
     match args.command {
         MasterCommand::Environments(environment_setup) => match environment_setup.command {
-            EnvironmentsCommand::Create(EnvironmentCreate { name, url }) => {
-                runtime.create_environment(name, url);
+            EnvironmentsCommand::Create(env_create) => {
+                let app = runtime.find_app(env_create.app.as_deref())?;
+                runtime.create_environment(app, env_create.name, env_create.url);
             }
         },
         MasterCommand::Apps(app_setup) => match app_setup.command {
@@ -98,7 +99,7 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
             }
         },
         MasterCommand::Endpoints(endpoints_setup) => {
-            let app = runtime.get_default_app();
+            let app = runtime.get_default_app()?;
             match endpoints_setup.command {
                 EndpointsCommand::Create(EndpointCreate { name, url, kind }) => {
                     runtime.create_endpoint(app, url, name, kind);
@@ -108,15 +109,15 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                         .get(runtime)
                         .endpoints
                         .iter()
-                        .map(|t| format!("{} - {}", t.name, t.url))
+                        .map(|t| format!("{:?} {}", t.kind, t.name))
                         .join("\n");
                     println!("{output}");
                 }
             }
         }
         MasterCommand::Endpoint(endpoint_setup) => {
-            let env = runtime.get_default_env();
-            let app = runtime.get_default_app();
+            let app = runtime.get_default_app()?;
+            let env = runtime.get_default_env(app)?;
             let endpoint = runtime.get_endpoint(app, &endpoint_setup.name);
             match endpoint_setup.command {
                 EndpointCommand::Send(endpoint_send) => {
@@ -140,7 +141,7 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                         params,
                         endpoint_send.pparams,
                         payload.map(|t| t.to_string()),
-                    );
+                    )?;
 
                     let status = result.status();
 
@@ -159,6 +160,7 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                                             ));
                                         }
                                     }
+                                    return Ok(())
                                 }
                             }
                             eprintln!("{status}");
@@ -181,7 +183,8 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
             }
         }
         MasterCommand::Environment(environment_setup) => {
-            let environment = runtime.find_env(&environment_setup.name);
+            let app = runtime.find_app(environment_setup.app.as_deref())?;
+            let environment = runtime.find_env(app, environment_setup.name.as_deref())?;
             match environment_setup.command {
                 EnvironmentCommand::SetAuthToken(SetAuthToken { token }) => {
                     runtime.set_auth(environment, AuthMethod::SetBearerToken(token));
@@ -191,6 +194,18 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                 }
             }
         }
+        MasterCommand::Hook(hook_setup) => {
+            match hook_setup.command{
+                HookCommand::SetDefaultApp(set_default_app) => {
+                    runtime.hook.default_app = Some(set_default_app.name)
+                },
+                HookCommand::SetDefaultEnv(set_default_env) =>{
+                    let app = runtime.find_app(set_default_env.app.as_deref())?;
+                    runtime.hook.default_envs.insert(app.get(runtime).name.clone(), set_default_env.name);
+                    
+                },
+            }
+        },
     }
     Ok(())
 }

@@ -1,5 +1,5 @@
 use crate::helper;
-use crate::logger::Logger;
+use crate::logger::Tunel;
 use crate::objects::*;
 use crate::serializer_helper;
 use std::collections::HashMap;
@@ -11,22 +11,21 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use derive_new::new;
+use itertools::Itertools;
 use reqwest;
 
 #[derive(new)]
 pub struct Runtime {
-    pub envs: Vec<Environment>,
     pub apps: Vec<App>,
-    pub globals: Globals,
+    pub hook: Hook,
     pub client: reqwest::blocking::Client,
-    pub tunnel: Box<dyn Logger>,
-    pub template_folder: String,
+    pub tunnel: Box<dyn Tunel>,
 }
 
 #[derive(Clone, Copy)]
 pub struct AppLink(pub usize);
 #[derive(Clone, Copy)]
-pub struct EnvironmentLink(pub usize);
+pub struct EnvironmentLink(pub usize, pub usize);
 #[derive(Clone, Copy)]
 pub struct EndpointLink(pub usize, pub usize);
 impl AppLink {
@@ -36,13 +35,16 @@ impl AppLink {
     pub fn get_mut(self, runtime: &mut Runtime) -> &mut App {
         return &mut runtime.apps[self.0];
     }
+    pub fn env(self, id: usize) -> EnvironmentLink{
+        return EnvironmentLink(self.0, id);
+    }
 }
 impl EnvironmentLink {
     pub fn get(self, runtime: &Runtime) -> &Environment {
-        return &runtime.envs[self.0];
+        return &runtime.apps[self.0].environments[self.1];
     }
     pub fn get_mut(self, runtime: &mut Runtime) -> &mut Environment {
-        return &mut runtime.envs[self.0];
+        return &mut runtime.apps[self.0].environments[self.0];
     }
 }
 impl EndpointLink {
@@ -55,8 +57,8 @@ impl EndpointLink {
 }
 
 impl Runtime {
-    pub fn create_environment(&mut self, name: String, url: String) {
-        self.envs.push(Environment {
+    pub fn create_environment(&mut self, app: AppLink, name: String, url: String) {
+        app.get_mut(self).environments.push(Environment {
             name: name,
             url: url,
             auth: None,
@@ -64,31 +66,41 @@ impl Runtime {
     }
     pub fn create_app(&mut self, name: String) {
         self.apps.push(App {
+            environments: vec![],
             name,
             endpoints: vec![],
         })
     }
-    pub fn get_default_env(&self) -> EnvironmentLink {
-        EnvironmentLink(
-            self.envs
-                .iter()
-                .enumerate()
-                .filter(|(i, env)| env.name == self.globals.default_env)
-                .map(|(i, _)| i)
-                .next()
-                .unwrap(),
-        )
+    pub fn get_default_env(&self, app: AppLink) -> Result<EnvironmentLink, String> {
+        let app_instance = app.get(self);
+        if let Some(default_env_name) = self.hook.default_envs.get(&app_instance.name) {
+            return Ok(EnvironmentLink(
+                app.0,
+                app_instance
+                    .environments
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, env)| &env.name == default_env_name)
+                    .map(|(i, _)| i)
+                    .next()
+                    .unwrap(),
+            ));
+        }
+        return Err("No default env for this app".to_string());
     }
-    pub fn get_default_app(&self) -> AppLink {
-        return AppLink(
-            self.apps
-                .iter()
-                .enumerate()
-                .filter(|(i, app)| app.name == self.globals.default_app)
-                .map(|(i, _)| i)
-                .next()
-                .unwrap(),
-        );
+    pub fn get_default_app(&self) -> Result<AppLink, String> {
+        if let Some(default_app) = &self.hook.default_app {
+            return Ok(AppLink(
+                self.apps
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, app)| &app.name == default_app)
+                    .map(|(i, _)| i)
+                    .next()
+                    .unwrap(),
+            ));
+        }
+        return Err(format!("No default app specified"));
     }
     fn build_url(
         &self,
@@ -127,44 +139,53 @@ impl Runtime {
             .0;
         return EndpointLink(app.0, index);
     }
-    pub fn find_env(&mut self, name: &str) -> EnvironmentLink {
-        if name.eq_ignore_ascii_case("default") {
-            return self.get_default_env();
+    pub fn find_env(&mut self, app: AppLink, name: Option<&str>) -> Result<EnvironmentLink, String> {
+        if name.is_none(){
+            return self.get_default_env(app);
         }
-        return EnvironmentLink(
-            self.envs
-                .iter_mut()
-                .enumerate()
-                .filter(|(i, e)| e.name == name)
-                .next()
-                .unwrap()
-                .0,
-        );
+        let name=name.unwrap();
+        if name.eq_ignore_ascii_case("default") {
+            return self.get_default_env(app);
+        }
+        let maybe_id = app.get(self)
+            .environments
+            .iter()
+            .position(|e| e.name == name)
+            .ok_or(format!("No environment with name {name}"));
+
+        return maybe_id.map(|val| app.env(val))
     }
-    pub fn read_template(&self, t: &str, app: AppLink, endpoint: EndpointLink) -> Option<String> {
-        return fs::read_to_string(
-            Path::new(&self.template_folder)
-                .join(&app.get(self).name)
-                .join(&endpoint.get(self).name)
-                .join(t),
-        )
-        .ok();
+    pub fn find_app(&mut self, name: Option<&str>) -> Result<AppLink, String> {
+        if name.is_none(){
+            return self.get_default_app();
+        }
+        let name = name.unwrap();
+        if name.eq_ignore_ascii_case("default") {
+            return self.get_default_app();
+        }
+
+        let maybe_id = self
+            .apps
+            .iter()
+            .position(|e| e.name == name)
+            .ok_or(format!("App {name} doesn't exists"));
+
+        return maybe_id.map(|val| AppLink(val))
     }
     pub fn send(
         &self,
         env: EnvironmentLink,
         endpoint: EndpointLink,
         params: HashMap<String, String>,
-        pparams: Option<Vec<String>>,
+        pparams: Vec<String>,
         payload: Option<String>,
-    ) -> reqwest::blocking::Response {
+    ) -> Result<reqwest::blocking::Response, String> {
         let env = env.get(self);
         let endpoint = endpoint.get(self);
         let kind = endpoint.kind;
 
         let url = self
-            .build_url(endpoint, env, &pparams.unwrap_or_default())
-            .unwrap();
+            .build_url(endpoint, env, &pparams)?;
         let payload_str = payload.clone().unwrap_or("NONE".to_string());
         self.tunnel.log(&format!("sending {payload_str} to {url}"));
         let mut builder = self
@@ -187,7 +208,7 @@ impl Runtime {
         if let Some(AuthMethod::SetBearerToken(token)) = &env.auth {
             builder = builder.bearer_auth(token)
         }
-        return builder.send().unwrap();
+        return Ok(builder.send().unwrap());
     }
 
     pub fn set_auth(&mut self, env: EnvironmentLink, auth: AuthMethod) {
