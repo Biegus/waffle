@@ -187,15 +187,6 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
             let environment = runtime.find_env(app, environment_setup.name.as_deref())?;
             match environment_setup.command {
                 EnvironmentCommand::SetAuthToken(SetAuthToken { token }) => {
-                    let mut token = token.clone();
-                    let parts = token.split(" ").collect_vec();
-                    if parts.len() == 1 {
-                        runtime
-                            .tunnel
-                            .log("Adding Bearer at the beginning of the token");
-                        token = format!("Bearer {token}");
-                    }
-
                     runtime.set_auth(environment, AuthMethod::SetBearerToken(token));
                 }
                 EnvironmentCommand::SetAuthSimple(SetAuthSimple { username, password }) => {
