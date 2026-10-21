@@ -36,7 +36,6 @@ pub fn read_list<T: DeserializeOwned>(path: &str) -> Vec<T> {
 pub fn write<T: Serialize + Debug>(file_path: &str, entry: &T) {
     let content = serde_json::to_string_pretty(entry).unwrap();
     fs::write(file_path, content).unwrap()
-
 }
 pub fn write_list<T: Serialize + Namable + Debug>(base_path: &str, entries: &Vec<T>) {
     let base_path = Path::new(base_path);
@@ -46,4 +45,3 @@ pub fn write_list<T: Serialize + Namable + Debug>(base_path: &str, entries: &Vec
         write(file_path.to_str().unwrap(), entry);
     }
 }
-

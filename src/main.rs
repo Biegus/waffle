@@ -31,19 +31,20 @@ fn fail(t: &str) {
 const APPS_DIRECTORY: &str = ".waffle";
 const HOOK_FILE_PATH: &str = ".waffle-hook";
 
-
-pub fn get_app_path() -> PathBuf{
-    return sysdirs::home_dir().expect("not supported platform").join(Path::new(APPS_DIRECTORY));
+pub fn get_app_path() -> PathBuf {
+    return sysdirs::home_dir()
+        .expect("not supported platform")
+        .join(Path::new(APPS_DIRECTORY));
 }
 
-pub fn create_runtime(tunnel:Box<dyn Tunel>) -> Runtime {
+pub fn create_runtime(tunnel: Box<dyn Tunel>) -> Runtime {
     let final_path = get_app_path();
     fs::create_dir_all(&final_path).unwrap();
     let apps: Vec<App> = serializer_helper::read_list(final_path.to_str().unwrap());
     let hook = fs::read_to_string(HOOK_FILE_PATH)
-                .ok()
-                .and_then(|e| serde_json::from_str(&e).ok())
-                .unwrap_or(Hook::default());
+        .ok()
+        .and_then(|e| serde_json::from_str(&e).ok())
+        .unwrap_or(Hook::default());
 
     let client = reqwest::blocking::Client::new();
     return Runtime {
@@ -57,7 +58,6 @@ pub fn create_runtime(tunnel:Box<dyn Tunel>) -> Runtime {
 pub fn save_state_from_runtime(runtime: &Runtime) {
     serializer_helper::write_list(get_app_path().to_str().unwrap(), &runtime.apps);
     serializer_helper::write(HOOK_FILE_PATH, &runtime.hook);
-
 }
 fn main() {
     let args = MainArgs::parse();

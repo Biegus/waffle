@@ -160,7 +160,7 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                                             ));
                                         }
                                     }
-                                    return Ok(())
+                                    return Ok(());
                                 }
                             }
                             eprintln!("{status}");
@@ -187,6 +187,15 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
             let environment = runtime.find_env(app, environment_setup.name.as_deref())?;
             match environment_setup.command {
                 EnvironmentCommand::SetAuthToken(SetAuthToken { token }) => {
+                    let mut token = token.clone();
+                    let parts = token.split(" ").collect_vec();
+                    if parts.len() == 1 {
+                        runtime
+                            .tunnel
+                            .log("Adding Bearer at the beginning of the token");
+                        token = format!("Bearer {token}");
+                    }
+
                     runtime.set_auth(environment, AuthMethod::SetBearerToken(token));
                 }
                 EnvironmentCommand::SetAuthSimple(SetAuthSimple { username, password }) => {
@@ -194,16 +203,16 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                 }
             }
         }
-        MasterCommand::Hook(hook_setup) => {
-            match hook_setup.command{
-                HookCommand::SetDefaultApp(set_default_app) => {
-                    runtime.hook.default_app = Some(set_default_app.name)
-                },
-                HookCommand::SetDefaultEnv(set_default_env) =>{
-                    let app = runtime.find_app(set_default_env.app.as_deref())?;
-                    runtime.hook.default_envs.insert(app.get(runtime).name.clone(), set_default_env.name);
-                    
-                },
+        MasterCommand::Hook(hook_setup) => match hook_setup.command {
+            HookCommand::SetDefaultApp(set_default_app) => {
+                runtime.hook.default_app = Some(set_default_app.name)
+            }
+            HookCommand::SetDefaultEnv(set_default_env) => {
+                let app = runtime.find_app(set_default_env.app.as_deref())?;
+                runtime
+                    .hook
+                    .default_envs
+                    .insert(app.get(runtime).name.clone(), set_default_env.name);
             }
         },
     }
