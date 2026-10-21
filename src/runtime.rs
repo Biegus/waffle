@@ -35,7 +35,7 @@ impl AppLink {
     pub fn get_mut(self, runtime: &mut Runtime) -> &mut App {
         return &mut runtime.apps[self.0];
     }
-    pub fn env(self, id: usize) -> EnvironmentLink{
+    pub fn env(self, id: usize) -> EnvironmentLink {
         return EnvironmentLink(self.0, id);
     }
 }
@@ -139,24 +139,29 @@ impl Runtime {
             .0;
         return EndpointLink(app.0, index);
     }
-    pub fn find_env(&mut self, app: AppLink, name: Option<&str>) -> Result<EnvironmentLink, String> {
-        if name.is_none(){
+    pub fn find_env(
+        &mut self,
+        app: AppLink,
+        name: Option<&str>,
+    ) -> Result<EnvironmentLink, String> {
+        if name.is_none() {
             return self.get_default_env(app);
         }
-        let name=name.unwrap();
+        let name = name.unwrap();
         if name.eq_ignore_ascii_case("default") {
             return self.get_default_env(app);
         }
-        let maybe_id = app.get(self)
+        let maybe_id = app
+            .get(self)
             .environments
             .iter()
             .position(|e| e.name == name)
             .ok_or(format!("No environment with name {name}"));
 
-        return maybe_id.map(|val| app.env(val))
+        return maybe_id.map(|val| app.env(val));
     }
     pub fn find_app(&mut self, name: Option<&str>) -> Result<AppLink, String> {
-        if name.is_none(){
+        if name.is_none() {
             return self.get_default_app();
         }
         let name = name.unwrap();
@@ -170,7 +175,7 @@ impl Runtime {
             .position(|e| e.name == name)
             .ok_or(format!("App {name} doesn't exists"));
 
-        return maybe_id.map(|val| AppLink(val))
+        return maybe_id.map(|val| AppLink(val));
     }
     pub fn send(
         &self,
@@ -184,8 +189,7 @@ impl Runtime {
         let endpoint = endpoint.get(self);
         let kind = endpoint.kind;
 
-        let url = self
-            .build_url(endpoint, env, &pparams)?;
+        let url = self.build_url(endpoint, env, &pparams)?;
         let payload_str = payload.clone().unwrap_or("NONE".to_string());
         self.tunnel.log(&format!("sending {payload_str} to {url}"));
         let mut builder = self

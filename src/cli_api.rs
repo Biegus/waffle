@@ -69,9 +69,8 @@ pub enum MasterCommand {
     #[clap(visible_alias = "e")]
     Endpoint(EndpointSetup),
     #[clap(visible_alias = "h")]
-    Hook(HookSetup)
+    Hook(HookSetup),
 }
-
 
 #[derive(Args, Debug)]
 pub struct HookSetup {
@@ -85,13 +84,13 @@ pub enum HookCommand {
 }
 #[derive(Args, Debug)]
 pub struct SetDefaultApp {
-    pub name: String
+    pub name: String,
 }
 
 #[derive(Args, Debug)]
 pub struct SetDefaultEnv {
     pub name: String,
-    pub app: Option<String>
+    pub app: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -107,17 +106,16 @@ pub struct EndpointSetup {
 }
 #[derive(Subcommand, Debug)]
 pub enum EndpointsCommand {
-    
-    #[clap(visible_alias="c")]
+    #[clap(visible_alias = "c")]
     Create(EndpointCreate),
-    #[clap(visible_alias="l")]
+    #[clap(visible_alias = "l")]
     List(EndpointsList),
 }
 #[derive(Subcommand, Debug)]
 pub enum EndpointCommand {
-    #[clap(visible_alias="s")]
+    #[clap(visible_alias = "s")]
     Send(EndpointSend),
-    #[clap(visible_alias="t")]
+    #[clap(visible_alias = "t")]
     Templates(TemplatesSetup),
 }
 #[derive(Args, Debug)]
@@ -143,11 +141,10 @@ pub struct TemplateCreate {
 
 #[derive(Args, Debug)]
 pub struct EndpointSend {
-    pub pparams:Vec<String>,
+    pub pparams: Vec<String>,
 
     #[arg(short, long, value_parser=validate_map_in_vec)]
     pub params: Option<Vec<(String, String)>>,
-
 
     //entry
     #[arg(long)]
@@ -196,9 +193,9 @@ pub struct AppCreate {
 }
 #[derive(Args, Debug)]
 pub struct EnvironmentSetup {
-    
-    pub app: Option<String>, 
     pub name: Option<String>,
+    #[arg(long, short)]
+    pub app: Option<String>,
     #[command(subcommand)]
     pub command: EnvironmentCommand,
 }
