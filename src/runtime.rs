@@ -209,9 +209,6 @@ impl Runtime {
                 }
             }
         }
-        if let Some(AuthMethod::SetBearerToken(token)) = &env.auth {
-            builder = builder.bearer_auth(token)
-        }
         return Ok(builder.send().unwrap());
     }
 
