@@ -30,11 +30,7 @@ pub struct Endpoint {
     pub name: String,
     pub schema: EndpointSchema,
 }
-#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug)]
-pub struct App {
-    pub name: String,
-    pub endpoints: Vec<Endpoint>,
-}
+
 #[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug)]
 pub struct Environment {
     pub name: String,
@@ -42,9 +38,15 @@ pub struct Environment {
     pub auth: Option<AuthMethod>,
 }
 #[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug)]
-pub struct Globals {
-    pub default_app: String,
-    pub default_env: String,
+pub struct App {
+    pub name: String,
+    pub environments: Vec<Environment>,
+    pub endpoints: Vec<Endpoint>,
+}
+#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, Default)]
+pub struct Hook {
+    pub default_app: Option<String>,
+    pub default_envs: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]

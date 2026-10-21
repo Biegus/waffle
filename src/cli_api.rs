@@ -57,11 +57,41 @@ pub struct MainArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum MasterCommand {
+    #[clap(visible_alias = "envs")]
     Environments(EnvironmentsSetup),
+    #[clap(visible_alias = "env")]
     Environment(EnvironmentSetup),
+    #[clap(visible_alias = "as")]
     Apps(AppSetup),
+
+    #[clap(visible_alias = "es")]
     Endpoints(EndpointsSetup),
+    #[clap(visible_alias = "e")]
     Endpoint(EndpointSetup),
+    #[clap(visible_alias = "h")]
+    Hook(HookSetup)
+}
+
+
+#[derive(Args, Debug)]
+pub struct HookSetup {
+    #[command(subcommand)]
+    pub command: HookCommand,
+}
+#[derive(Subcommand, Debug)]
+pub enum HookCommand {
+    SetDefaultApp(SetDefaultApp),
+    SetDefaultEnv(SetDefaultEnv),
+}
+#[derive(Args, Debug)]
+pub struct SetDefaultApp {
+    pub name: String
+}
+
+#[derive(Args, Debug)]
+pub struct SetDefaultEnv {
+    pub name: String,
+    pub app: Option<String>
 }
 
 #[derive(Args, Debug)]
@@ -77,12 +107,17 @@ pub struct EndpointSetup {
 }
 #[derive(Subcommand, Debug)]
 pub enum EndpointsCommand {
+    
+    #[clap(visible_alias="c")]
     Create(EndpointCreate),
+    #[clap(visible_alias="l")]
     List(EndpointsList),
 }
 #[derive(Subcommand, Debug)]
 pub enum EndpointCommand {
+    #[clap(visible_alias="s")]
     Send(EndpointSend),
+    #[clap(visible_alias="t")]
     Templates(TemplatesSetup),
 }
 #[derive(Args, Debug)]
@@ -108,12 +143,13 @@ pub struct TemplateCreate {
 
 #[derive(Args, Debug)]
 pub struct EndpointSend {
+    pub pparams:Vec<String>,
+
     #[arg(short, long, value_parser=validate_map_in_vec)]
     pub params: Option<Vec<(String, String)>>,
-    #[arg(long)]
-    pub pparams: Option<Vec<String>>,
 
-    //entries
+
+    //entry
     #[arg(long)]
     pub input: Option<PayloadInput>,
 
@@ -160,7 +196,9 @@ pub struct AppCreate {
 }
 #[derive(Args, Debug)]
 pub struct EnvironmentSetup {
-    pub name: String,
+    
+    pub app: Option<String>, 
+    pub name: Option<String>,
     #[command(subcommand)]
     pub command: EnvironmentCommand,
 }
@@ -190,6 +228,8 @@ pub enum EnvironmentsCommand {
 #[derive(Args, Debug)]
 pub struct EnvironmentCreate {
     pub name: String,
+    #[arg(long)]
+    pub app: Option<String>,
     pub url: String,
 }
 fn validate_map_in_vec(input: &str) -> Result<(String, String), String> {
