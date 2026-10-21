@@ -1,0 +1,16 @@
+[package]
+name = "waffle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.1", features = ["derive"] }
+derive-new = "0.7.0"
+itertools = "0.15.0"
+jq = "0.1.0"
+openapi = "0.1.5"
+regex = "1.13.1"
+reqwest = { version = "0.13.4", features = ["blocking", "query"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = {version="1.0.150", features=["raw_value"]}
+sysdirs = "0.9.4"
