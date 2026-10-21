@@ -1,45 +1,47 @@
-use std::{collections::HashMap, net::ToSocketAddrs, str::FromStr};
 use jq::JsonFilter;
+use std::{collections::HashMap, net::ToSocketAddrs, str::FromStr};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::{helper::{self, ResultExtension, to_json_or_nice_error}, objects::{HTTPMethod, Json}};
+use crate::{
+    helper::{self, ResultExtension, to_json_or_nice_error},
+    objects::{HTTPMethod, Json},
+};
 
-#[derive(Debug,Clone)]
-pub enum PayloadInput{
+#[derive(Debug, Clone)]
+pub enum PayloadInput {
     File(String),
     Template(String),
-    Inline(Json), 
+    Inline(Json),
     // We can't use JsonFilter type here because it doesn't implement debug :/
     Jq(String),
     Null,
-
 }
-impl FromStr for PayloadInput{
-    type Err= String;
+impl FromStr for PayloadInput {
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        if s == "null"{
-            return Ok(PayloadInput::Null);  
+        if s == "null" {
+            return Ok(PayloadInput::Null);
         }
-        if !s.contains(":"){
-            return Ok(Self::File(s.to_string()))
+        if !s.contains(":") {
+            return Ok(Self::File(s.to_string()));
         }
         let parts: Vec<_> = s.splitn(2, ":").collect();
-        match parts[0]{
+        match parts[0] {
             "t" => return Ok(Self::Template(parts[1].to_string())),
             "i" => return Ok(Self::Inline(to_json_or_nice_error(parts[1])?)),
             "jq" => {
                 // PayloadInput needs to be debug, so it cannot contained Json filter, we still try whether it parsers
-                JsonFilter::from_str(parts[1]).str_er_with_context("Failed to parse payload input jq")?;
-                return Ok(Self::Jq(parts[1].to_string()))
+                JsonFilter::from_str(parts[1])
+                    .str_er_with_context("Failed to parse payload input jq")?;
+                return Ok(Self::Jq(parts[1].to_string()));
             }
-            _ => return Err(format!("Invalid type: {}", parts[0]))
+            _ => return Err(format!("Invalid type: {}", parts[0])),
         }
     }
 }
-
 
 #[derive(Clone)]
 struct CliMap(pub HashMap<String, String>);
@@ -92,7 +94,6 @@ pub struct TemplatesSetup {
 pub enum TemplatesCommand {
     Create(TemplateCreate),
 }
-
 
 #[derive(Args, Debug)]
 pub struct TemplateCreate {

@@ -27,16 +27,20 @@ fn handle_entry_payload(
     return match entry {
         Some(entry) => Ok(Some(match entry {
             PayloadInput::File(path) => {
-                let text = fs::read_to_string(path).str_er_with_context("Failed to read input file")?;
-                serde_json::from_str(&text).str_er_with_context("Failed to treat input file as json")?
+                let text =
+                    fs::read_to_string(path).str_er_with_context("Failed to read input file")?;
+                serde_json::from_str(&text)
+                    .str_er_with_context("Failed to treat input file as json")?
             }
             PayloadInput::Template(_) => todo!(),
             PayloadInput::Inline(value) => value,
             PayloadInput::Jq(program) => {
                 let filter = JsonFilter::from_str(&program).expect("type assumption");
-                filter.filter_json(Json::Object(Map::default())).str_er_with_context("Failed to apply jq program")?
+                filter
+                    .filter_json(Json::Object(Map::default()))
+                    .str_er_with_context("Failed to apply jq program")?
             }
-            PayloadInput::Null => Json::Null
+            PayloadInput::Null => Json::Null,
         })),
         None => Ok(None),
     };
