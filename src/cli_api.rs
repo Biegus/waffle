@@ -89,7 +89,6 @@ pub enum HookCommand {
     GetDefaultEnv,
 }
 
-
 #[derive(Args, Debug)]
 pub struct SetDefaultApp {
     pub name: String,
@@ -221,7 +220,6 @@ pub enum EnvironmentsCommand {
 #[derive(Args, Debug)]
 pub struct EnvironmentCreate {
     pub name: String,
-    #[arg(long)]
     pub url: String,
 }
 fn validate_map_in_vec(input: &str) -> Result<(String, String), String> {
@@ -231,22 +229,31 @@ fn validate_map_in_vec(input: &str) -> Result<(String, String), String> {
     return Ok((left.to_string(), right.to_string()));
 }
 
-pub fn needs_app(t: &MasterCommand) -> bool {
-    return !matches!(t, MasterCommand::Apps(_));
+pub fn can_app_be_passed(t: &MasterCommand) -> bool {
+    return !matches!(
+        t,
+        MasterCommand::Apps(_)
+            | MasterCommand::Hook(HookSetup {
+                command: HookCommand::GetDefaultApp | HookCommand::SetDefaultApp(_)
+            })
+    );
 }
-pub fn needs_env(t: &MasterCommand) -> bool {
-    return needs_app(t)
-        && !matches!(
+pub fn can_env_be_passed(t: &MasterCommand) -> bool {
+    return can_app_be_passed(t)
+        && matches!(
             t,
-            MasterCommand::Apps(_) | MasterCommand::Environment(_) | MasterCommand::Environments(_),
+            MasterCommand::Endpoint(EndpointSetup {
+                command: EndpointCommand::Send(_),
+                ..
+            }),
         );
 }
 
 pub fn validate_high_level_valid(t: &MainArgs) -> Result<(), String> {
-    if t.app.is_some() && !needs_app(&t.command) {
+    if t.app.is_some() && !can_app_be_passed(&t.command) {
         return Err(format!("app parameter is not allowed in such context"));
     }
-    if t.app.is_some() && !needs_env(&t.command) {
+    if t.env.is_some() && !can_env_be_passed(&t.command) {
         return Err(format!("env parameter is not allowed in such context"));
     }
     return Ok(());

@@ -8,12 +8,13 @@ use crate::runtime::{AppLink, EnvironmentLink, Runtime};
 use crate::{cli_api::*, helper};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
+use std::env;
 use std::fs;
 use std::process::exit;
 use std::str::FromStr;
 
-pub fn handle(args: MainArgs, runtime: &mut Runtime) -> i32 {
-    match handle_internal(args, runtime) {
+pub fn handle(args: MainArgs, runtime: &mut Runtime, vars: &HashMap<String, String>) -> i32 {
+    match handle_internal(args, runtime, vars) {
         Ok(_) => return 0,
         Err(msg) => {
             eprintln!("E: {msg}");
@@ -87,40 +88,52 @@ fn handle_payload_mod(
 }
 
 fn require_app_set(app: Option<AppLink>) -> Result<AppLink, String> {
-    app.ok_or(format!("app should be either specified or included in hook"))
+    app.ok_or(format!(
+        "app should be either specified or included in hook"
+    ))
 }
 
 fn require_env_set(env: Option<EnvironmentLink>) -> Result<EnvironmentLink, String> {
-    env.ok_or(format!("env for given app should be either specified or included in hook"))
+    env.ok_or(format!(
+        "env for given app should be either specified or included in hook"
+    ))
 }
 
-fn handle_internal(args: MainArgs, r: &mut Runtime) -> Result<(), String> {
+fn handle_internal(
+    args: MainArgs,
+    r: &mut Runtime,
+    vars: &HashMap<String, String>,
+) -> Result<(), String> {
     validate_high_level_valid(&args)?; // fixme: include those additional validation in clap object
     let mut app = None;
     let mut env = None;
     if let Some(app_name) = &args.app {
         app = Some(r.find_app(Some(app_name.as_str()))?)
-    } else if needs_app(&args.command) {
+    } else if can_app_be_passed(&args.command) {
         app = r.get_default_app().ok();
         if let Some(app) = app {
-            r
-                .tunnel
-                .log(&format!("Default app: {} will be used", &app.get(r).name))
-        }  
+            r.tunnel
+                .log(&format!("Default app ({}) will be used", &app.get(r).name))
+        }
     }
 
-    if let Some(env_name) = args.app {
+    if let Some(env_name) = args.env {
         let app = require_app_set(app)?;
         env = Some(r.find_env(app, Some(env_name.as_str()))?);
-    } else if needs_env(&args.command) {
+    } else if can_env_be_passed(&args.command) {
         env = r.get_default_env(require_app_set(app)?).ok();
-        if needs_env(&args.command) {
+        if can_env_be_passed(&args.command) {
             if let Some(env) = app {
-                r
-                    .tunnel
-                    .log(&format!("Default env: {} will be used", &env.get(r).name))
+                r.tunnel
+                    .log(&format!("Default env ({}) will be used", &env.get(r).name))
             }
         }
+    }
+    if let Some(app) = app {
+        r.tunnel.log(&format!("app: {}", app.get(r).name))
+    }
+    if let Some(env) = env {
+        r.tunnel.log(&format!("env: {}", env.get(r).name))
     }
 
     match args.command {
@@ -144,7 +157,10 @@ fn handle_internal(args: MainArgs, r: &mut Runtime) -> Result<(), String> {
                     r.create_endpoint(app, url, name, kind);
                 }
                 EndpointsCommand::List(endpoints_list) => {
-                   print!("{}",(app.get(r).endpoints.iter().map(simple_serialize_endpoint)).join("\n"))
+                    print!(
+                        "{}",
+                        (app.get(r).endpoints.iter().map(simple_serialize_endpoint)).join("\n")
+                    )
                 }
             }
         }
@@ -249,7 +265,7 @@ fn handle_internal(args: MainArgs, r: &mut Runtime) -> Result<(), String> {
                         .as_deref()
                         .unwrap_or(&"".to_string())
                 )
-            },
+            }
         },
     }
     Ok(())

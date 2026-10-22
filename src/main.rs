@@ -1,6 +1,6 @@
 mod cli_api;
-mod cli_output_serializers;
 mod cli_execution;
+mod cli_output_serializers;
 mod helper;
 mod logger;
 mod objects;
@@ -60,12 +60,16 @@ pub fn save_state_from_runtime(runtime: &Runtime) {
     serializer_helper::write_list(get_app_path().to_str().unwrap(), &runtime.apps);
     serializer_helper::write(HOOK_FILE_PATH, &runtime.hook);
 }
+
 fn main() {
     let args = MainArgs::parse();
-    let tunnel = Box::new(StdTunnel::new(args.logs));
+    let vars: HashMap<String, String> = std::env::vars().collect();
+    let tunnel = Box::new(StdTunnel::new(
+        args.logs || vars.get("WAFFLE_LOGS") == Some(&"1".to_string()),
+    ));
     let mut runtime = create_runtime(tunnel);
 
-    let code = cli_execution::handle(args, &mut runtime);
+    let code = cli_execution::handle(args, &mut runtime, &vars);
     if code == 0 {
         save_state_from_runtime(&runtime);
     } else {

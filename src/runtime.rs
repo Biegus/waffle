@@ -1,4 +1,5 @@
 use crate::helper;
+use crate::helper::ResultExtension;
 use crate::logger::Tunel;
 use crate::objects::*;
 use crate::serializer_helper;
@@ -209,7 +210,7 @@ impl Runtime {
                 }
             }
         }
-        return Ok(builder.send().unwrap());
+        return builder.send().str_er_with_context("Failed to send request");
     }
 
     pub fn set_auth(&mut self, env: EnvironmentLink, auth: AuthMethod) {
