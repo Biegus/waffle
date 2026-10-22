@@ -81,7 +81,15 @@ pub struct HookSetup {
 pub enum HookCommand {
     SetDefaultApp(SetDefaultApp),
     SetDefaultEnv(SetDefaultEnv),
+    GetDefaultApp,
+    GetDefaultEnv(GetDefaultEnv),
 }
+
+#[derive(Args, Debug)]
+pub struct GetDefaultEnv {
+    pub app: Option<String>,
+}
+
 #[derive(Args, Debug)]
 pub struct SetDefaultApp {
     pub name: String,

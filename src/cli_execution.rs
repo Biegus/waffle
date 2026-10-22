@@ -5,8 +5,8 @@ use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_erro
 use crate::objects::*;
 use crate::runtime::Runtime;
 use crate::{cli_api::*, helper};
-use serde_json::{self, Map};
-use std::collections::HashMap;
+use serde_json::{self, Map, json};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::process::exit;
 use std::str::FromStr;
@@ -205,6 +205,26 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                     .default_envs
                     .insert(app.get(runtime).name.clone(), set_default_env.name);
             }
+            HookCommand::GetDefaultApp => {
+                print!(
+                    "{}",
+                    runtime.hook.default_app.clone().unwrap_or("".to_string())
+                )
+            }
+            HookCommand::GetDefaultEnv(get_default_env) => print!(
+                "{}",
+                &runtime
+                    .hook
+                    .default_envs
+                    .get(
+                        &runtime
+                            .find_app(get_default_env.app.as_deref())?
+                            .get(runtime)
+                            .name
+                    )
+                    .as_deref()
+                    .unwrap_or(&"".to_string())
+            ),
         },
     }
     Ok(())
