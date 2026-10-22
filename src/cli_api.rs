@@ -53,6 +53,10 @@ pub struct MainArgs {
     pub command: MasterCommand,
     #[arg(long)]
     pub logs: bool,
+    #[arg(long, short)]
+    pub app: Option<String>,
+    #[arg(long, short)]
+    pub env: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -82,13 +86,9 @@ pub enum HookCommand {
     SetDefaultApp(SetDefaultApp),
     SetDefaultEnv(SetDefaultEnv),
     GetDefaultApp,
-    GetDefaultEnv(GetDefaultEnv),
+    GetDefaultEnv,
 }
 
-#[derive(Args, Debug)]
-pub struct GetDefaultEnv {
-    pub app: Option<String>,
-}
 
 #[derive(Args, Debug)]
 pub struct SetDefaultApp {
@@ -98,7 +98,6 @@ pub struct SetDefaultApp {
 #[derive(Args, Debug)]
 pub struct SetDefaultEnv {
     pub name: String,
-    pub app: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -178,15 +177,6 @@ pub struct EndpointCreate {
 #[derive(Args, Debug)]
 pub struct EndpointsList {}
 #[derive(Args, Debug)]
-pub struct EndpointWindow {
-    pub filter: String,
-    pub command: EndpointWindowCommand,
-}
-#[derive(ValueEnum, Debug, Clone)]
-pub enum EndpointWindowCommand {
-    Send,
-}
-#[derive(Args, Debug)]
 pub struct AppSetup {
     #[command(subcommand)]
     pub command: AppCommand,
@@ -202,8 +192,6 @@ pub struct AppCreate {
 #[derive(Args, Debug)]
 pub struct EnvironmentSetup {
     pub name: Option<String>,
-    #[arg(long, short)]
-    pub app: Option<String>,
     #[command(subcommand)]
     pub command: EnvironmentCommand,
 }
@@ -234,7 +222,6 @@ pub enum EnvironmentsCommand {
 pub struct EnvironmentCreate {
     pub name: String,
     #[arg(long)]
-    pub app: Option<String>,
     pub url: String,
 }
 fn validate_map_in_vec(input: &str) -> Result<(String, String), String> {
@@ -242,4 +229,25 @@ fn validate_map_in_vec(input: &str) -> Result<(String, String), String> {
         |_| "Parameters didn't follow \"x=y\" pattern. There needs to be exactly one \"=\"",
     )?;
     return Ok((left.to_string(), right.to_string()));
+}
+
+pub fn needs_app(t: &MasterCommand) -> bool {
+    return !matches!(t, MasterCommand::Apps(_));
+}
+pub fn needs_env(t: &MasterCommand) -> bool {
+    return needs_app(t)
+        && !matches!(
+            t,
+            MasterCommand::Apps(_) | MasterCommand::Environment(_) | MasterCommand::Environments(_),
+        );
+}
+
+pub fn validate_high_level_valid(t: &MainArgs) -> Result<(), String> {
+    if t.app.is_some() && !needs_app(&t.command) {
+        return Err(format!("app parameter is not allowed in such context"));
+    }
+    if t.app.is_some() && !needs_env(&t.command) {
+        return Err(format!("env parameter is not allowed in such context"));
+    }
+    return Ok(());
 }

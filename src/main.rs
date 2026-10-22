@@ -1,4 +1,5 @@
 mod cli_api;
+mod cli_output_serializers;
 mod cli_execution;
 mod helper;
 mod logger;
