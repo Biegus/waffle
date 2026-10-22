@@ -160,7 +160,7 @@ impl Runtime {
 
         return maybe_id.map(|val| app.env(val));
     }
-    pub fn find_app(&mut self, name: Option<&str>) -> Result<AppLink, String> {
+    pub fn find_app(&self, name: Option<&str>) -> Result<AppLink, String> {
         if name.is_none() {
             return self.get_default_app();
         }
