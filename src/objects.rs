@@ -7,11 +7,15 @@ use std::{any::Any, collections::HashMap};
 use crate::helper;
 
 pub type Json = serde_json::Value;
+pub type JsonMap = serde_json::Map<String, Json>;
 
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize, Debug, clap::ValueEnum)]
 pub enum HTTPMethod {
     GET,
     POST,
+    PUT,
+    DELETE,
+    PATCH,
 }
 #[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct Parameter {

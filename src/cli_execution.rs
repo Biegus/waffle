@@ -1,9 +1,10 @@
 use itertools::Itertools;
 use jq::JsonFilter;
 
+use crate::cli_output_serializers::simple_serialize_endpoint;
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
 use crate::objects::*;
-use crate::runtime::Runtime;
+use crate::runtime::{AppLink, EnvironmentLink, Runtime};
 use crate::{cli_api::*, helper};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
@@ -85,40 +86,72 @@ fn handle_payload_mod(
     return Ok(Some(payload));
 }
 
-fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> {
-    match args.command {
-        MasterCommand::Environments(environment_setup) => match environment_setup.command {
-            EnvironmentsCommand::Create(env_create) => {
-                let app = runtime.find_app(env_create.app.as_deref())?;
-                runtime.create_environment(app, env_create.name, env_create.url);
+fn require_app_set(app: Option<AppLink>) -> Result<AppLink, String> {
+    app.ok_or(format!("app should be either specified or included in hook"))
+}
+
+fn require_env_set(env: Option<EnvironmentLink>) -> Result<EnvironmentLink, String> {
+    env.ok_or(format!("env for given app should be either specified or included in hook"))
+}
+
+fn handle_internal(args: MainArgs, r: &mut Runtime) -> Result<(), String> {
+    validate_high_level_valid(&args)?; // fixme: include those additional validation in clap object
+    let mut app = None;
+    let mut env = None;
+    if let Some(app_name) = &args.app {
+        app = Some(r.find_app(Some(app_name.as_str()))?)
+    } else if needs_app(&args.command) {
+        app = r.get_default_app().ok();
+        if let Some(app) = app {
+            r
+                .tunnel
+                .log(&format!("Default app: {} will be used", &app.get(r).name))
+        }  
+    }
+
+    if let Some(env_name) = args.app {
+        let app = require_app_set(app)?;
+        env = Some(r.find_env(app, Some(env_name.as_str()))?);
+    } else if needs_env(&args.command) {
+        env = r.get_default_env(require_app_set(app)?).ok();
+        if needs_env(&args.command) {
+            if let Some(env) = app {
+                r
+                    .tunnel
+                    .log(&format!("Default env: {} will be used", &env.get(r).name))
             }
-        },
+        }
+    }
+
+    match args.command {
+        MasterCommand::Environments(environment_setup) => {
+            let app = require_app_set(app)?;
+            match environment_setup.command {
+                EnvironmentsCommand::Create(env_create) => {
+                    r.create_environment(app, env_create.name, env_create.url);
+                }
+            }
+        }
         MasterCommand::Apps(app_setup) => match app_setup.command {
             AppCommand::Create(AppCreate { name }) => {
-                runtime.create_app(name);
+                r.create_app(name);
             }
         },
         MasterCommand::Endpoints(endpoints_setup) => {
-            let app = runtime.get_default_app()?;
+            let app = require_app_set(app)?;
             match endpoints_setup.command {
                 EndpointsCommand::Create(EndpointCreate { name, url, kind }) => {
-                    runtime.create_endpoint(app, url, name, kind);
+                    r.create_endpoint(app, url, name, kind);
                 }
                 EndpointsCommand::List(endpoints_list) => {
-                    let output = app
-                        .get(runtime)
-                        .endpoints
-                        .iter()
-                        .map(|t| format!("{:?} {}", t.kind, t.name))
-                        .join("\n");
-                    println!("{output}");
+                   print!("{}",(app.get(r).endpoints.iter().map(simple_serialize_endpoint)).join("\n"))
                 }
             }
         }
         MasterCommand::Endpoint(endpoint_setup) => {
-            let app = runtime.get_default_app()?;
-            let env = runtime.get_default_env(app)?;
-            let endpoint = runtime.get_endpoint(app, &endpoint_setup.name);
+            let app = require_app_set(app)?;
+            let env = require_env_set(env)?;
+            let endpoint = r.get_endpoint(app, &endpoint_setup.name);
             match endpoint_setup.command {
                 EndpointCommand::Send(endpoint_send) => {
                     let params: HashMap<String, String> = endpoint_send
@@ -126,16 +159,15 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
                         .unwrap_or_default()
                         .into_iter()
                         .collect();
-                    let mut payload: Option<Json> =
-                        handle_entry_payload(runtime, endpoint_send.input)?;
+                    let mut payload: Option<Json> = handle_entry_payload(r, endpoint_send.input)?;
                     payload = handle_payload_mod(
-                        runtime,
+                        r,
                         payload,
                         endpoint_send.mod_jq,
                         endpoint_send.mod_insert,
                     )?;
 
-                    let result = runtime.send(
+                    let result = r.send(
                         env,
                         endpoint,
                         params,
@@ -183,48 +215,41 @@ fn handle_internal(args: MainArgs, runtime: &mut Runtime) -> Result<(), String> 
             }
         }
         MasterCommand::Environment(environment_setup) => {
-            let app = runtime.find_app(environment_setup.app.as_deref())?;
-            let environment = runtime.find_env(app, environment_setup.name.as_deref())?;
+            let app = require_app_set(app)?;
+            let environment = r.find_env(app, environment_setup.name.as_deref())?;
             match environment_setup.command {
                 EnvironmentCommand::SetAuthToken(SetAuthToken { token }) => {
-                    runtime.set_auth(environment, AuthMethod::SetBearerToken(token));
+                    r.set_auth(environment, AuthMethod::SetBearerToken(token));
                 }
                 EnvironmentCommand::SetAuthSimple(SetAuthSimple { username, password }) => {
-                    runtime.set_auth(environment, AuthMethod::SimpleAuth { username, password });
+                    r.set_auth(environment, AuthMethod::SimpleAuth { username, password });
                 }
             }
         }
         MasterCommand::Hook(hook_setup) => match hook_setup.command {
             HookCommand::SetDefaultApp(set_default_app) => {
-                runtime.hook.default_app = Some(set_default_app.name)
+                r.hook.default_app = Some(set_default_app.name)
             }
             HookCommand::SetDefaultEnv(set_default_env) => {
-                let app = runtime.find_app(set_default_env.app.as_deref())?;
-                runtime
-                    .hook
+                let app = require_app_set(app)?;
+                r.hook
                     .default_envs
-                    .insert(app.get(runtime).name.clone(), set_default_env.name);
+                    .insert(app.get(r).name.clone(), set_default_env.name);
             }
             HookCommand::GetDefaultApp => {
+                print!("{}", r.hook.default_app.clone().unwrap_or("".to_string()))
+            }
+            HookCommand::GetDefaultEnv => {
+                let app = require_app_set(app)?;
                 print!(
                     "{}",
-                    runtime.hook.default_app.clone().unwrap_or("".to_string())
+                    &r.hook
+                        .default_envs
+                        .get(&app.get(r).name)
+                        .as_deref()
+                        .unwrap_or(&"".to_string())
                 )
-            }
-            HookCommand::GetDefaultEnv(get_default_env) => print!(
-                "{}",
-                &runtime
-                    .hook
-                    .default_envs
-                    .get(
-                        &runtime
-                            .find_app(get_default_env.app.as_deref())?
-                            .get(runtime)
-                            .name
-                    )
-                    .as_deref()
-                    .unwrap_or(&"".to_string())
-            ),
+            },
         },
     }
     Ok(())
