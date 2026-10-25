@@ -183,12 +183,15 @@ fn handle_internal(
                         endpoint_send.mod_insert,
                     )?;
 
+                    let payload = payload.map(|t| t.to_string());
+                    let payload = payload.as_deref();
+
                     let result = r.send(
                         env,
                         endpoint,
-                        params,
-                        endpoint_send.pparams,
-                        payload.map(|t| t.to_string()),
+                        &params,
+                        &endpoint_send.pparams,
+                        payload
                     )?;
 
                     let status = result.status();
@@ -240,6 +243,11 @@ fn handle_internal(
                 EnvironmentCommand::SetAuthSimple(SetAuthSimple { username, password }) => {
                     r.set_auth(environment, AuthMethod::SimpleAuth { username, password });
                 }
+                EnvironmentCommand::SetAutoAuthToken(SetAutoAuthToken { method, endpoint, payload, output_jq }) => {
+                    let v: Json = serde_json::from_str(&payload).str_er_with_context("Payload was not valid json")?;
+                    JsonFilter::from_str(&output_jq).str_er_with_context("filter was not valid jq")?;
+                    r.set_auth(environment, AuthMethod::AutoBearerToken(AutoTokenMethod::new(method,endpoint, v, output_jq), None));
+                },
             }
         }
         MasterCommand::Hook(hook_setup) => match hook_setup.command {

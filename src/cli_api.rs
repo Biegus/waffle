@@ -197,7 +197,15 @@ pub struct EnvironmentSetup {
 #[derive(Subcommand, Debug)]
 pub enum EnvironmentCommand {
     SetAuthToken(SetAuthToken),
+    SetAutoAuthToken(SetAutoAuthToken),
     SetAuthSimple(SetAuthSimple),
+}
+#[derive(Args, Debug)]
+pub struct SetAutoAuthToken {
+    pub method: HTTPMethod,
+    pub endpoint: String, // fixme: maybe link to normal endpoint or otherwise handle repetition while setting auth
+    pub payload: String, // fixme: handle json/jq validation at cli api level !! 
+    pub output_jq: String,
 }
 #[derive(Args, Debug)]
 pub struct SetAuthToken {
