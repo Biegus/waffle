@@ -1,8 +1,9 @@
+use chrono::{DateTime, NaiveDateTime, Utc};
 use clap;
 use derive_new::new;
 use reqwest::{self};
 use serde;
-use std::{any::Any, collections::HashMap};
+use std::{any::Any, collections::HashMap, time::Duration};
 
 use crate::helper;
 
@@ -56,8 +57,24 @@ pub struct Hook {
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub enum AuthMethod {
     SetBearerToken(String),
+    AutoBearerToken(AutoTokenMethod, Option<String>),
     SimpleAuth {
         username: String,
         password: Option<String>,
     },
 }
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, derive_new::new)]
+pub struct AutoTokenMethod {
+    pub method: HTTPMethod,
+    pub endpoint: String,
+    pub payload: Json,
+    pub output_jq: String,
+}
+
+
+impl Into<reqwest::Method> for HTTPMethod{
+    fn into(self) -> reqwest::Method {
+        return reqwest::Method::from_bytes(format!("{self:?}").as_bytes()).unwrap();
+    }
+}
+

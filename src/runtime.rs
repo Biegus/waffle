@@ -10,9 +10,15 @@ use std::ops::Deref;
 use std::path;
 use std::path::Path;
 use std::path::PathBuf;
+use std::str::FromStr;
+use std::time::SystemTime;
 
+use chrono::DateTime;
+use chrono::NaiveDateTime;
+use chrono::Utc;
 use derive_new::new;
 use itertools::Itertools;
+use jq::JsonFilter;
 use reqwest;
 
 #[derive(new)]
@@ -45,7 +51,7 @@ impl EnvironmentLink {
         return &runtime.apps[self.0].environments[self.1];
     }
     pub fn get_mut(self, runtime: &mut Runtime) -> &mut Environment {
-        return &mut runtime.apps[self.0].environments[self.0];
+        return &mut runtime.apps[self.0].environments[self.1];
     }
 }
 impl EndpointLink {
@@ -178,35 +184,123 @@ impl Runtime {
 
         return maybe_id.map(|val| AppLink(val));
     }
+    fn sure_auth_needs_refresh(&self, env: EnvironmentLink) -> bool {
+        return matches!(
+            env.get(self).auth,
+            Some(AuthMethod::AutoBearerToken(_, None))
+        );
+    }
+    fn can_refresh_help_after_401(&self, env: EnvironmentLink) -> bool {
+        return matches!(env.get(self).auth, Some(AuthMethod::AutoBearerToken(_, _)));
+    }
+    fn refresh_auth(&mut self, env: EnvironmentLink) -> Result<(), String> {
+        self.tunnel.log("Refreshing auth");
+        let host = env.get(self).url.clone();
+        let auth = env.get(self).auth.as_ref();
+        if auth.is_none() {
+            return Ok(());
+        }
+        let auth = auth.unwrap();
+        match auth {
+            AuthMethod::SetBearerToken(_) => {}
+            AuthMethod::AutoBearerToken(auto_token_method, _auto_token_cached) => {
+                let response = self
+                    .client
+                    .request(
+                        auto_token_method.method.into(),
+                        format!("{}/{}", host, auto_token_method.endpoint),
+                    )
+                    .header("Content-Type", "application/json")
+                    .body(serde_json::to_string(&auto_token_method.payload).unwrap())
+                    .send()
+                    .str_er_with_context("Failed to refresh token")?;
+                let status = response.status();
+                if status != 200 {
+                    return Err(format!(
+                        "Token endpoint returned result different than 200, it returned {status}"
+                    ));
+                }
+                let text = response.text().unwrap_or("".to_string());
+                let json_value: Json =
+                    serde_json::from_str(&text)
+                        .str_er_with_context("Non json response from token endpoint")?;
+                let filter = JsonFilter::from_str(&auto_token_method.output_jq).expect("Type assumption");
+                let value = filter.filter_json(json_value)
+                    .str_er_with_context("Couldn't apply jq to result")?;
+                let str_value: &str = value
+                    .as_str()
+                    .ok_or("Token endpoint returned non string as token")?;
+                env.get_mut(self).auth = Some(AuthMethod::AutoBearerToken(
+                    auto_token_method.clone(),
+                    Some(str_value.to_string()),
+                ));
+            }
+            AuthMethod::SimpleAuth { username, password } => {}
+        }
+        Ok(())
+    }
+
     pub fn send(
-        &self,
+        &mut self,
         env: EnvironmentLink,
         endpoint: EndpointLink,
-        params: HashMap<String, String>,
-        pparams: Vec<String>,
-        payload: Option<String>,
+        params: &HashMap<String, String>,
+        pparams: &Vec<String>,
+        payload: Option<&str>,
+    ) -> Result<reqwest::blocking::Response, String> {
+        let mut did_refresh = false;
+        if self.sure_auth_needs_refresh(env) {
+            self.tunnel.log("Auth in incomplete state, will refresh");
+            self.refresh_auth(env)?;
+            did_refresh = true
+        }
+        let result = self._send(env, endpoint, params, pparams, payload);
+        if !did_refresh && self.can_refresh_help_after_401(env) {
+            if let Ok(result) = &result {
+                if result.status() == 401 {
+                    self.tunnel
+                        .log("Received 401 but token may be stale, will refresh");
+                    self.refresh_auth(env)?;
+                    self.tunnel.log("Sending again, after refreshing auth");
+                    return self._send(env, endpoint, params, pparams, payload);
+                }
+            }
+        }
+        return result;
+    }
+
+    fn _send(
+        &mut self,
+        env: EnvironmentLink,
+        endpoint: EndpointLink,
+        params: &HashMap<String, String>,
+        pparams: &Vec<String>,
+        payload: Option<&str>,
     ) -> Result<reqwest::blocking::Response, String> {
         let env = env.get(self);
         let endpoint = endpoint.get(self);
         let kind = endpoint.kind;
 
-        let url = self.build_url(endpoint, env, &pparams)?;
-        let payload_str = payload.clone().unwrap_or("NONE".to_string());
+        let url = self.build_url(endpoint, env, pparams)?;
+        let payload_str = payload.unwrap_or("").to_string();
         self.tunnel.log(&format!("sending {payload_str} to {url}"));
         let mut builder = self
             .client
-            .request(
-                reqwest::Method::from_bytes(format!("{kind:?}").as_bytes()).unwrap(),
-                url,
-            )
-            .query(&params)
-            .body(payload.unwrap_or_default())
+            .request(kind.into(), url)
+            .query(params)
+            .body(payload_str)
             .header("Content-Type", "application/json");
         if let Some(auth) = &env.auth {
             builder = match &auth {
-                &AuthMethod::SetBearerToken(token) => builder.bearer_auth(token),
+                AuthMethod::SetBearerToken(token) => builder.bearer_auth(token),
                 AuthMethod::SimpleAuth { username, password } => {
                     builder.basic_auth(username, password.clone())
+                }
+                AuthMethod::AutoBearerToken(auth_method, Some(auth_cache)) => {
+                    builder.bearer_auth(auth_cache)
+                }
+                AuthMethod::AutoBearerToken(_, None) => {
+                    panic!("Not refreshed auto token");
                 }
             }
         }
