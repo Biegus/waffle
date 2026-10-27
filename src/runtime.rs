@@ -190,7 +190,7 @@ impl Runtime {
             Some(AuthMethod::AutoBearerToken(_, None))
         );
     }
-    fn can_refresh_help_after_401(&self, env: EnvironmentLink) -> bool {
+    fn can_refresh_help_after_401_or_403(&self, env: EnvironmentLink) -> bool {
         return matches!(env.get(self).auth, Some(AuthMethod::AutoBearerToken(_, _)));
     }
     fn refresh_auth(&mut self, env: EnvironmentLink) -> Result<(), String> {
@@ -255,11 +255,12 @@ impl Runtime {
             did_refresh = true
         }
         let result = self._send(env, endpoint, params, pparams, payload);
-        if !did_refresh && self.can_refresh_help_after_401(env) {
+        if !did_refresh && self.can_refresh_help_after_401_or_403(env) {
             if let Ok(result) = &result {
-                if result.status() == 401 {
+                let status  = result.status();
+                if status == 401 || status == 403{
                     self.tunnel
-                        .log("Received 401 but token may be stale, will refresh");
+                        .log(&format!("Received {status} but token may be stale, will refresh"));
                     self.refresh_auth(env)?;
                     self.tunnel.log("Sending again, after refreshing auth");
                     return self._send(env, endpoint, params, pparams, payload);
