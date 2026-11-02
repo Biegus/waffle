@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use jq::JsonFilter;
 use std::{collections::HashMap, net::ToSocketAddrs, str::FromStr};
 
@@ -5,15 +6,15 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::{
     helper::{self, ResultExtension, to_json_or_nice_error},
-    objects::{HTTPMethod, Json},
+    objects::{HTTPMethod, Json, JsonMap},
 };
 
 #[derive(Debug, Clone)]
 pub enum PayloadInput {
     File(String),
     Template(String),
-    Inline(Json),
     // We can't use JsonFilter type here because it doesn't implement debug :/
+    // todo: wrapper should be added
     Jq(String),
     Null,
 }
@@ -31,7 +32,6 @@ impl FromStr for PayloadInput {
         let parts: Vec<_> = s.splitn(2, ":").collect();
         match parts[0] {
             "t" => return Ok(Self::Template(parts[1].to_string())),
-            "i" => return Ok(Self::Inline(to_json_or_nice_error(parts[1])?)),
             "jq" => {
                 // PayloadInput needs to be debug, so it cannot contained Json filter, we still try whether it parsers
                 JsonFilter::from_str(parts[1])
@@ -139,7 +139,7 @@ pub struct TemplateCreate {
     pub name: String,
     #[arg(long)]
     pub template: Option<String>,
-    #[arg(long, value_parser=validate_map_in_vec)]
+    #[arg(long, value_parser=parse_map_entry)]
     pub insert: Option<Vec<(String, String)>>,
     #[arg(short, long)]
     pub jq: Option<String>,
@@ -149,7 +149,7 @@ pub struct TemplateCreate {
 pub struct EndpointSend {
     pub pparams: Vec<String>,
 
-    #[arg(short, long, value_parser=validate_map_in_vec)]
+    #[arg(short, long, value_parser=parse_map_entry)]
     pub params: Option<Vec<(String, String)>>,
 
     //entry
@@ -157,14 +157,15 @@ pub struct EndpointSend {
     pub input: Option<PayloadInput>,
 
     // mods
-    #[arg(long, value_parser=validate_map_in_vec)]
-    pub mod_insert: Option<Vec<(String, String)>>,
     #[arg(long)]
     pub mod_jq: Option<String>,
 
     // outs
     #[arg(long)]
     pub out_get: Option<String>,
+
+    #[arg(long)]
+    pub retry_on_send_err: bool,
 }
 
 #[derive(Args, Debug)]
@@ -204,7 +205,7 @@ pub enum EnvironmentCommand {
 pub struct SetAutoAuthToken {
     pub method: HTTPMethod,
     pub endpoint: String, // fixme: maybe link to normal endpoint or otherwise handle repetition while setting auth
-    pub payload: String, // fixme: handle json/jq validation at cli api level !! 
+    pub payload: String,  // fixme: handle json/jq validation at cli api level !!
     pub output_jq: String,
 }
 #[derive(Args, Debug)]
@@ -230,7 +231,7 @@ pub struct EnvironmentCreate {
     pub name: String,
     pub url: String,
 }
-fn validate_map_in_vec(input: &str) -> Result<(String, String), String> {
+fn parse_map_entry(input: &str) -> Result<(String, String), String> {
     let [left, right] = input.split("=").collect::<Vec<_>>().try_into().map_err(
         |_| "Parameters didn't follow \"x=y\" pattern. There needs to be exactly one \"=\"",
     )?;
