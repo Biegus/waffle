@@ -12,10 +12,12 @@ use std::env;
 use std::fs;
 use std::process::exit;
 use std::str::FromStr;
+use std::thread::sleep;
+use std::time::Duration;
 
 pub fn handle(args: MainArgs, runtime: &mut Runtime, vars: &HashMap<String, String>) -> i32 {
     match handle_internal(args, runtime, vars) {
-        Ok(_) => return 0,
+        Ok(v) => return v,
         Err(msg) => {
             eprintln!("E: {msg}");
             return 1;
@@ -35,7 +37,6 @@ fn handle_entry_payload(
                     .str_er_with_context("Failed to treat input file as json")?
             }
             PayloadInput::Template(_) => todo!(),
-            PayloadInput::Inline(value) => value,
             PayloadInput::Jq(program) => {
                 let filter = JsonFilter::from_str(&program).expect("type assumption");
                 filter
@@ -103,7 +104,7 @@ fn handle_internal(
     args: MainArgs,
     r: &mut Runtime,
     vars: &HashMap<String, String>,
-) -> Result<(), String> {
+) -> Result<i32, String> {
     validate_high_level_valid(&args)?; // fixme: include those additional validation in clap object
     let mut app = None;
     let mut env = None;
@@ -113,7 +114,7 @@ fn handle_internal(
         app = r.get_default_app().ok();
         if let Some(app) = app {
             r.tunnel
-                .log(&format!("Default app ({}) will be used", &app.get(r).name))
+                .log(&format!("Default appwill be used"))
         }
     }
 
@@ -125,7 +126,7 @@ fn handle_internal(
         if can_env_be_passed(&args.command) {
             if let Some(env) = app {
                 r.tunnel
-                    .log(&format!("Default env ({}) will be used", &env.get(r).name))
+                    .log(&format!("Default env will be used"))
             }
         }
     }
@@ -176,23 +177,26 @@ fn handle_internal(
                         .into_iter()
                         .collect();
                     let mut payload: Option<Json> = handle_entry_payload(r, endpoint_send.input)?;
-                    payload = handle_payload_mod(
-                        r,
-                        payload,
-                        endpoint_send.mod_jq,
-                        endpoint_send.mod_insert,
-                    )?;
+                    payload = handle_payload_mod(r, payload, endpoint_send.mod_jq, None)?;
 
                     let payload = payload.map(|t| t.to_string());
                     let payload = payload.as_deref();
 
-                    let result = r.send(
-                        env,
-                        endpoint,
-                        &params,
-                        &endpoint_send.pparams,
-                        payload
-                    )?;
+                    let result = loop {
+                        let maybe_result =
+                            r.send(env, endpoint, &params, &endpoint_send.pparams, payload);
+
+                        if endpoint_send.retry_on_send_err
+                            && let Err(failed) = maybe_result
+                        {
+                            r.tunnel
+                                .user_info(&format!("Sending failed: {failed}, will retry in 3s..."));
+                            sleep(Duration::from_secs(3));
+                            continue;
+                        }
+
+                        break maybe_result?;
+                    };
 
                     let status = result.status();
 
@@ -211,7 +215,7 @@ fn handle_internal(
                                             ));
                                         }
                                     }
-                                    return Ok(());
+                                    return Ok(0);
                                 }
                             }
                             eprintln!("{status}");
@@ -229,6 +233,9 @@ fn handle_internal(
                         }
                         println!("{status}:(no text)")
                     }
+                    if !status.is_success() {
+                        return Ok(status.as_u16() as i32);
+                    }
                 }
                 EndpointCommand::Templates(templates_setup) => todo!(),
             }
@@ -243,11 +250,24 @@ fn handle_internal(
                 EnvironmentCommand::SetAuthSimple(SetAuthSimple { username, password }) => {
                     r.set_auth(environment, AuthMethod::SimpleAuth { username, password });
                 }
-                EnvironmentCommand::SetAutoAuthToken(SetAutoAuthToken { method, endpoint, payload, output_jq }) => {
-                    let v: Json = serde_json::from_str(&payload).str_er_with_context("Payload was not valid json")?;
-                    JsonFilter::from_str(&output_jq).str_er_with_context("filter was not valid jq")?;
-                    r.set_auth(environment, AuthMethod::AutoBearerToken(AutoTokenMethod::new(method,endpoint, v, output_jq), None));
-                },
+                EnvironmentCommand::SetAutoAuthToken(SetAutoAuthToken {
+                    method,
+                    endpoint,
+                    payload,
+                    output_jq,
+                }) => {
+                    let v: Json = serde_json::from_str(&payload)
+                        .str_er_with_context("Payload was not valid json")?;
+                    JsonFilter::from_str(&output_jq)
+                        .str_er_with_context("filter was not valid jq")?;
+                    r.set_auth(
+                        environment,
+                        AuthMethod::AutoBearerToken(
+                            AutoTokenMethod::new(method, endpoint, v, output_jq),
+                            None,
+                        ),
+                    );
+                }
             }
         }
         MasterCommand::Hook(hook_setup) => match hook_setup.command {
@@ -276,5 +296,5 @@ fn handle_internal(
             }
         },
     }
-    Ok(())
+    Ok(0)
 }
