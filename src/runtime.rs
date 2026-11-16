@@ -128,7 +128,7 @@ impl Runtime {
     }
     pub fn create_endpoint(&mut self, app: AppLink, url: String, name: String, kind: HTTPMethod) {
         app.get_mut(self).endpoints.push(Endpoint {
-            url: url,
+            url: url.replace("{", "<").replace("}", ">"),
             kind: kind,
             name,
             schema: EndpointSchema::default(),

@@ -71,7 +71,6 @@ pub struct AutoTokenMethod {
     pub output_jq: String,
 }
 
-
 impl Into<reqwest::Method> for HTTPMethod{
     fn into(self) -> reqwest::Method {
         return reqwest::Method::from_bytes(format!("{self:?}").as_bytes()).unwrap();

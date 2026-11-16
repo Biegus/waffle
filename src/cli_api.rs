@@ -171,8 +171,8 @@ pub struct EndpointSend {
 #[derive(Args, Debug)]
 pub struct EndpointCreate {
     pub name: String,
-    pub url: String,
     pub kind: HTTPMethod,
+    pub url: String,
 }
 #[derive(Args, Debug)]
 pub struct EndpointsList {}
