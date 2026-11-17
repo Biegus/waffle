@@ -338,6 +338,7 @@ impl Runtime {
         return regex.replace_all(t, "").to_string();
     }
     pub fn load_schema(&mut self, app: AppLink, path: &str) -> Result<(), String> {
+        let endpoints_len_at_start = app.get(self).endpoints.len();
         let spec =
             openapi::from_path(path).str_er_with_context("Failed to parse from given path")?;
         let app_instance = app.get(self);
@@ -391,6 +392,10 @@ impl Runtime {
                 );
             }
         }
+        self.tunnel.log(&format!(
+            "Added {} new endpoints",
+            app.get(self).endpoints.len() - endpoints_len_at_start,
+        ));
         return Ok(());
     }
 }

@@ -316,6 +316,7 @@ fn handle_internal(
         },
         MasterCommand::App(app_setup) => {
             let app = r.find_app(Some(&app_setup.app))?;
+            r.tunnel.log(&format!("Found app: {}", app.get(r).name));
             match app_setup.command {
                 AppCommand::LoadSchema(load_schema) => r.load_schema(app, &load_schema.file)?,
             }
