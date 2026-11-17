@@ -112,8 +112,8 @@ fn handle_internal(
         app = Some(r.find_app(Some(app_name.as_str()))?)
     } else if can_app_be_passed(&args.command) {
         app = r.get_default_app().ok();
-        if let Some(app) = app {
-            r.tunnel.log(&format!("Default appwill be used"))
+        if let Some(_) = app {
+            r.tunnel.log(&format!("Default app will be used"))
         }
     }
 
@@ -123,7 +123,7 @@ fn handle_internal(
     } else if can_env_be_passed(&args.command) {
         env = r.get_default_env(require_app_set(app)?).ok();
         if can_env_be_passed(&args.command) {
-            if let Some(env) = app {
+            if let Some(_) = app {
                 r.tunnel.log(&format!("Default env will be used"))
             }
         }
@@ -145,7 +145,7 @@ fn handle_internal(
             }
         }
         MasterCommand::Apps(app_setup) => match app_setup.command {
-            AppCommand::Create(AppCreate { name }) => {
+            AppsCommand::Create(AppCreate { name }) => {
                 r.create_app(name);
             }
         },
@@ -166,7 +166,13 @@ fn handle_internal(
         MasterCommand::Endpoint(endpoint_setup) => {
             let app = require_app_set(app)?;
             let env = require_env_set(env)?;
-            let endpoint = r.get_endpoint(app, &endpoint_setup.name);
+            let endpoint = r.get_endpoint(app, &endpoint_setup.name).ok_or_else(|| {
+                format!(
+                    "Endpoint not found: {} in app {}",
+                    endpoint_setup.name,
+                    app.get(r).name
+                )
+            })?;
             match endpoint_setup.command {
                 EndpointCommand::Send(endpoint_send) => {
                     let params: HashMap<String, String> = endpoint_send
@@ -245,7 +251,9 @@ fn handle_internal(
                         return Ok(status.as_u16() as i32);
                     }
                 }
-                EndpointCommand::Templates(templates_setup) => todo!(),
+                EndpointCommand::Rename(endpoint_rename) => {
+                    endpoint.get_mut(r).name = endpoint_rename.to
+                }
             }
         }
         MasterCommand::Environment(environment_setup) => {
@@ -306,6 +314,12 @@ fn handle_internal(
                 )
             }
         },
+        MasterCommand::App(app_setup) => {
+            let app = r.find_app(Some(&app_setup.app))?;
+            match app_setup.command {
+                AppCommand::LoadSchema(load_schema) => r.load_schema(app, &load_schema.file)?,
+            }
+        }
     }
     Ok(0)
 }

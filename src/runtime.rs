@@ -3,7 +3,10 @@ use crate::helper::ResultExtension;
 use crate::logger::Tunel;
 use crate::objects::*;
 use crate::serializer_helper;
+use regex::Regex;
 use std::collections::HashMap;
+use std::collections::HashSet;
+use std::convert::identity;
 use std::fs;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -146,17 +149,16 @@ impl Runtime {
             schema: EndpointSchema::default(),
         });
     }
-    pub fn get_endpoint<'a>(&'a self, app: AppLink, name: &str) -> EndpointLink {
+    pub fn get_endpoint<'a>(&'a self, app: AppLink, name: &str) -> Option<EndpointLink> {
         let index = app
             .get(self)
             .endpoints
             .iter()
             .enumerate()
             .filter(|(_, t)| t.name == name)
-            .next()
-            .unwrap()
+            .next()?
             .0;
-        return EndpointLink(app.0, index);
+        return Some(EndpointLink(app.0, index));
     }
     pub fn find_env(
         &mut self,
@@ -329,5 +331,66 @@ impl Runtime {
 
     pub fn set_auth(&mut self, env: EnvironmentLink, auth: AuthMethod) {
         env.get_mut(self).auth = Some(auth);
+    }
+
+    pub fn _equate_path(t: &str) -> String {
+        let regex = Regex::new(r"\{.*?\}").unwrap();
+        return regex.replace_all(t, "").to_string();
+    }
+    pub fn load_schema(&mut self, app: AppLink, path: &str) -> Result<(), String> {
+        let spec =
+            openapi::from_path(path).str_er_with_context("Failed to parse from given path")?;
+        let app_instance = app.get(self);
+        let existing_patches: HashSet<(String, HTTPMethod)> = app_instance
+            .endpoints
+            .iter()
+            .map(|t| (t.url.replace("<", "{").replace(">", "}"), t.kind))
+            .map(|(t, m)| (Runtime::_equate_path(&t), m))
+            .collect(); // fix me: regardles of how they are saved there should be type to save them agnosticily
+
+        for (path, operations) in spec.paths.into_iter() {
+            let mut path = path;
+            if path.starts_with(r"/") {
+                self.tunnel.log("skip slash");
+                path = path[1..].to_string();
+            }
+            let equated_path = Runtime::_equate_path(&path);
+            self.tunnel.log(&format!("Browsing path: {path}"));
+            for (op, method) in vec![
+                (operations.get, HTTPMethod::GET),
+                (operations.post, HTTPMethod::POST),
+                (operations.put, HTTPMethod::PUT),
+                (operations.delete, HTTPMethod::DELETE),
+                (operations.patch, HTTPMethod::PATCH),
+            ]
+            .into_iter()
+            .filter_map(|(op, method)| op.map(|o| (o, method)))
+            {
+                self.tunnel.log(&format!(
+                    "Got method: {:?} with operation_id: {:?}",
+                    method, op.operation_id
+                ));
+
+                let name = op.operation_id.or(op.summary).map(|t| t.replace(" ", "_"));
+                if name.is_none() {
+                    self.tunnel.log("Will skip, can't decide on name");
+                    continue;
+                }
+                let name = name.unwrap();
+                if existing_patches.contains(&(equated_path.clone(), method)) {
+                    // fixme: this clone can probably be removed
+                    self.tunnel.log("Will skip, already exists!");
+                    continue;
+                }
+
+                self.create_endpoint(
+                    app,
+                    path.clone(),
+                    name.replace(".", "").to_lowercase(),
+                    method,
+                );
+            }
+        }
+        return Ok(());
     }
 }

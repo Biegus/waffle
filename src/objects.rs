@@ -10,7 +10,9 @@ use crate::helper;
 pub type Json = serde_json::Value;
 pub type JsonMap = serde_json::Map<String, Json>;
 
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize, Debug, clap::ValueEnum)]
+#[derive(
+    Clone, Copy, serde::Serialize, serde::Deserialize, Debug, clap::ValueEnum, Eq, PartialEq, Hash,
+)]
 pub enum HTTPMethod {
     GET,
     POST,
@@ -71,7 +73,7 @@ pub struct AutoTokenMethod {
     pub output_jq: String,
 }
 
-impl Into<reqwest::Method> for HTTPMethod{
+impl Into<reqwest::Method> for HTTPMethod {
     fn into(self) -> reqwest::Method {
         return reqwest::Method::from_bytes(format!("{self:?}").as_bytes()).unwrap();
     }

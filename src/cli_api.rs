@@ -66,7 +66,8 @@ pub enum MasterCommand {
     #[clap(visible_alias = "env")]
     Environment(EnvironmentSetup),
     #[clap(visible_alias = "as")]
-    Apps(AppSetup),
+    Apps(AppsSetup),
+    App(AppSetup),
 
     #[clap(visible_alias = "es")]
     Endpoints(EndpointsSetup),
@@ -121,8 +122,11 @@ pub enum EndpointsCommand {
 pub enum EndpointCommand {
     #[clap(visible_alias = "s")]
     Send(EndpointSend),
-    #[clap(visible_alias = "t")]
-    Templates(TemplatesSetup),
+    Rename(EndpointRename),
+}
+#[derive(Args, Debug)]
+pub struct EndpointRename {
+    pub to: String,
 }
 #[derive(Args, Debug)]
 pub struct TemplatesSetup {
@@ -182,12 +186,26 @@ pub struct EndpointCreate {
 #[derive(Args, Debug)]
 pub struct EndpointsList {}
 #[derive(Args, Debug)]
+pub struct AppsSetup {
+    #[command(subcommand)]
+    pub command: AppsCommand,
+}
+#[derive(Args, Debug)]
 pub struct AppSetup {
+    pub app: String,
     #[command(subcommand)]
     pub command: AppCommand,
 }
 #[derive(Subcommand, Debug)]
 pub enum AppCommand {
+    LoadSchema(LoadSchema),
+}
+#[derive(Args, Debug)]
+pub struct LoadSchema {
+    pub file: String,
+}
+#[derive(Subcommand, Debug)]
+pub enum AppsCommand {
     Create(AppCreate),
 }
 #[derive(Args, Debug)]
@@ -250,14 +268,14 @@ pub fn can_app_be_passed(t: &MasterCommand) -> bool {
             | MasterCommand::Hook(HookSetup {
                 command: HookCommand::GetDefaultApp | HookCommand::SetDefaultApp(_)
             })
-    );
+    ) && !matches!(t, MasterCommand::App(_));
 }
 pub fn can_env_be_passed(t: &MasterCommand) -> bool {
     return can_app_be_passed(t)
         && matches!(
             t,
             MasterCommand::Endpoint(EndpointSetup {
-                command: EndpointCommand::Send(_),
+                command: EndpointCommand::Send(_) | EndpointCommand::Rename(_),
                 ..
             }),
         );

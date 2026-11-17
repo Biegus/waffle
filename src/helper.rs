@@ -92,7 +92,7 @@ impl<T, E: Display> ResultExtension<T> for Result<T, E> {
     fn str_er_with_context(self, context: &str) -> Result<T, String> {
         self.map_err(|e| format!("{context}:\n{e}"))
     }
-    fn stringify_er(self) -> Result<T, String>{
+    fn stringify_er(self) -> Result<T, String> {
         self.map_err(|e| e.to_string())
     }
 }
