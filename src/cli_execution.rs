@@ -4,7 +4,7 @@ use jq::JsonFilter;
 use crate::cli_output_serializers::simple_serialize_endpoint;
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
 use crate::objects::*;
-use crate::runtime::{AppLink, EnvironmentLink, Runtime};
+use crate::runtime::{AppLink, EnvironmentLink, Runtime, SendError};
 use crate::{cli_api::*, helper};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
@@ -113,8 +113,7 @@ fn handle_internal(
     } else if can_app_be_passed(&args.command) {
         app = r.get_default_app().ok();
         if let Some(app) = app {
-            r.tunnel
-                .log(&format!("Default appwill be used"))
+            r.tunnel.log(&format!("Default appwill be used"))
         }
     }
 
@@ -125,8 +124,7 @@ fn handle_internal(
         env = r.get_default_env(require_app_set(app)?).ok();
         if can_env_be_passed(&args.command) {
             if let Some(env) = app {
-                r.tunnel
-                    .log(&format!("Default env will be used"))
+                r.tunnel.log(&format!("Default env will be used"))
             }
         }
     }
@@ -186,16 +184,26 @@ fn handle_internal(
                         let maybe_result =
                             r.send(env, endpoint, &params, &endpoint_send.pparams, payload);
 
-                        if endpoint_send.retry_on_send_err
-                            && let Err(failed) = maybe_result
-                        {
-                            r.tunnel
-                                .user_info(&format!("Sending failed: {failed}, will retry in 3s..."));
+                        if let Err(failed) = maybe_result {
+                            if !match failed {
+                                SendError::HTTPSendError(_) => {
+                                    endpoint_send.retry_on.contains(&RetryType::Net)
+                                }
+                                SendError::AuthenticationMethodMisbehaved(_) => endpoint_send
+                                    .retry_on
+                                    .contains(&RetryType::AuthenticationMisbehaved),
+                                _ => false,
+                            } {
+                                break Err(failed).stringify_er()?;
+                            }
+                            r.tunnel.user_info(&format!(
+                                "Sending failed: {failed}, will retry in 3s..."
+                            ));
                             sleep(Duration::from_secs(3));
                             continue;
                         }
 
-                        break maybe_result?;
+                        break maybe_result.stringify_er()?;
                     };
 
                     let status = result.status();
@@ -284,6 +292,9 @@ fn handle_internal(
                 print!("{}", r.hook.default_app.clone().unwrap_or("".to_string()))
             }
             HookCommand::GetDefaultEnv => {
+                if app.is_none() {
+                    return Ok(0);
+                }
                 let app = require_app_set(app)?;
                 print!(
                     "{}",

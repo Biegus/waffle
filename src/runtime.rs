@@ -12,11 +12,13 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::SystemTime;
+use thiserror::Error;
 
 use chrono::DateTime;
 use chrono::NaiveDateTime;
 use chrono::Utc;
 use derive_new::new;
+use either::Either;
 use itertools::Itertools;
 use jq::JsonFilter;
 use reqwest;
@@ -35,6 +37,16 @@ pub struct AppLink(pub usize);
 pub struct EnvironmentLink(pub usize, pub usize);
 #[derive(Clone, Copy)]
 pub struct EndpointLink(pub usize, pub usize);
+#[derive(Error, Debug, Clone)]
+pub enum SendError {
+    #[error("Url building failure: {0}")]
+    URLBuildError(String),
+    #[error("Failed to send HTTP request: {0}")]
+    HTTPSendError(String),
+    #[error("Authentication method misbheaved: {0}")]
+    AuthenticationMethodMisbehaved(String),
+}
+
 impl AppLink {
     pub fn get(self, runtime: &Runtime) -> &App {
         return &runtime.apps[self.0];
@@ -221,11 +233,12 @@ impl Runtime {
                     ));
                 }
                 let text = response.text().unwrap_or("".to_string());
-                let json_value: Json =
-                    serde_json::from_str(&text)
-                        .str_er_with_context("Non json response from token endpoint")?;
-                let filter = JsonFilter::from_str(&auto_token_method.output_jq).expect("Type assumption");
-                let value = filter.filter_json(json_value)
+                let json_value: Json = serde_json::from_str(&text)
+                    .str_er_with_context("Non json response from token endpoint")?;
+                let filter =
+                    JsonFilter::from_str(&auto_token_method.output_jq).expect("Type assumption");
+                let value = filter
+                    .filter_json(json_value)
                     .str_er_with_context("Couldn't apply jq to result")?;
                 let str_value: &str = value
                     .as_str()
@@ -247,21 +260,24 @@ impl Runtime {
         params: &HashMap<String, String>,
         pparams: &Vec<String>,
         payload: Option<&str>,
-    ) -> Result<reqwest::blocking::Response, String> {
+    ) -> Result<reqwest::blocking::Response, SendError> {
         let mut did_refresh = false;
         if self.sure_auth_needs_refresh(env) {
             self.tunnel.log("Auth in incomplete state, will refresh");
-            self.refresh_auth(env)?;
+            self.refresh_auth(env)
+                .map_err(SendError::AuthenticationMethodMisbehaved)?;
             did_refresh = true
         }
         let result = self._send(env, endpoint, params, pparams, payload);
         if !did_refresh && self.can_refresh_help_after_401_or_403(env) {
             if let Ok(result) = &result {
-                let status  = result.status();
-                if status == 401 || status == 403{
-                    self.tunnel
-                        .log(&format!("Received {status} but token may be stale, will refresh"));
-                    self.refresh_auth(env)?;
+                let status = result.status();
+                if status == 401 || status == 403 {
+                    self.tunnel.log(&format!(
+                        "Received {status} but token may be stale, will refresh"
+                    ));
+                    self.refresh_auth(env)
+                        .map_err(SendError::AuthenticationMethodMisbehaved)?;
                     self.tunnel.log("Sending again, after refreshing auth");
                     return self._send(env, endpoint, params, pparams, payload);
                 }
@@ -277,12 +293,14 @@ impl Runtime {
         params: &HashMap<String, String>,
         pparams: &Vec<String>,
         payload: Option<&str>,
-    ) -> Result<reqwest::blocking::Response, String> {
+    ) -> Result<reqwest::blocking::Response, SendError> {
         let env = env.get(self);
         let endpoint = endpoint.get(self);
         let kind = endpoint.kind;
 
-        let url = self.build_url(endpoint, env, pparams)?;
+        let url = self
+            .build_url(endpoint, env, pparams)
+            .map_err(SendError::URLBuildError)?;
         let payload_str = payload.unwrap_or("").to_string();
         self.tunnel.log(&format!("sending {payload_str} to {url}"));
         let mut builder = self
@@ -297,15 +315,16 @@ impl Runtime {
                 AuthMethod::SimpleAuth { username, password } => {
                     builder.basic_auth(username, password.clone())
                 }
-                AuthMethod::AutoBearerToken(auth_method, Some(auth_cache)) => {
-                    builder.bearer_auth(auth_cache)
-                }
+                AuthMethod::AutoBearerToken(_, Some(auth_cache)) => builder.bearer_auth(auth_cache),
                 AuthMethod::AutoBearerToken(_, None) => {
                     panic!("Not refreshed auto token");
                 }
             }
         }
-        return builder.send().str_er_with_context("Failed to send request");
+        return builder
+            .send()
+            .stringify_er()
+            .map_err(SendError::HTTPSendError);
     }
 
     pub fn set_auth(&mut self, env: EnvironmentLink, auth: AuthMethod) {

@@ -76,4 +76,3 @@ impl Into<reqwest::Method> for HTTPMethod{
         return reqwest::Method::from_bytes(format!("{self:?}").as_bytes()).unwrap();
     }
 }
-

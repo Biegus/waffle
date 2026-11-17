@@ -144,6 +144,11 @@ pub struct TemplateCreate {
     #[arg(short, long)]
     pub jq: Option<String>,
 }
+#[derive(ValueEnum, Debug, Clone, PartialEq, Copy)]
+pub enum RetryType {
+    Net,
+    AuthenticationMisbehaved,
+}
 
 #[derive(Args, Debug)]
 pub struct EndpointSend {
@@ -164,8 +169,8 @@ pub struct EndpointSend {
     #[arg(long)]
     pub out_get: Option<String>,
 
-    #[arg(long)]
-    pub retry_on_send_err: bool,
+    #[arg(short, long)]
+    pub retry_on: Vec<RetryType>,
 }
 
 #[derive(Args, Debug)]
