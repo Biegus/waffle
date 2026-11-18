@@ -5,14 +5,14 @@ pub trait Tunel {
     fn user_info(&self, t: &str);
     fn error(&self, t: &str);
 }
-#[derive(new, Default)]
+#[derive(new, Default, Clone)]
 pub struct StdTunnel {
     pub log_to_std: bool,
 }
 
 impl Tunel for StdTunnel {
     fn user_info(&self, t: &str) {
-        println!("INFO:{t}")
+        eprintln!("INFO:{t}")
     }
     fn log(&self, t: &str) {
         if self.log_to_std {

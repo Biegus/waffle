@@ -20,17 +20,17 @@ pub enum HTTPMethod {
     DELETE,
     PATCH,
 }
-#[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct Parameter {
     pub required: bool,
     pub name: String,
 }
-#[derive(Clone, Debug, new, serde::Serialize, serde::Deserialize, Default)]
+#[derive(Clone, Debug, new, serde::Serialize, serde::Deserialize, Default, PartialEq, Eq)]
 pub struct EndpointSchema {
     pub parameters: Option<Vec<Parameter>>,
     pub consumes: Option<Vec<String>>,
 }
-#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug)]
+#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     pub url: String,
     pub kind: HTTPMethod,
@@ -38,25 +38,25 @@ pub struct Endpoint {
     pub schema: EndpointSchema,
 }
 
-#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug)]
+#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
 pub struct Environment {
     pub name: String,
     pub url: String,
     pub auth: Option<AuthMethod>,
 }
-#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug)]
+#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
 pub struct App {
     pub name: String,
     pub environments: Vec<Environment>,
     pub endpoints: Vec<Endpoint>,
 }
-#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, Default)]
+#[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, Default, PartialEq, Eq)]
 pub struct Hook {
     pub default_app: Option<String>,
     pub default_envs: HashMap<String, String>,
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub enum AuthMethod {
     SetBearerToken(String),
     AutoBearerToken(AutoTokenMethod, Option<String>),
@@ -65,7 +65,7 @@ pub enum AuthMethod {
         password: Option<String>,
     },
 }
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, derive_new::new)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, derive_new::new, PartialEq, Eq)]
 pub struct AutoTokenMethod {
     pub method: HTTPMethod,
     pub endpoint: String,
@@ -77,4 +77,9 @@ impl Into<reqwest::Method> for HTTPMethod {
     fn into(self) -> reqwest::Method {
         return reqwest::Method::from_bytes(format!("{self:?}").as_bytes()).unwrap();
     }
+}
+#[derive(Clone, Debug, derive_new::new, PartialEq, Eq)]
+pub struct Snapshot {
+    pub apps: Vec<App>,
+    pub hook: Hook,
 }

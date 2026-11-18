@@ -79,6 +79,13 @@ impl EndpointLink {
 }
 
 impl Runtime {
+    pub fn create_snapshot(&self) -> Snapshot {
+        return Snapshot::new(self.apps.clone(), self.hook.clone());
+    }
+    pub fn into_snapshot(self) -> Snapshot {
+        return Snapshot::new(self.apps, self.hook);
+    }
+
     pub fn create_environment(&mut self, app: AppLink, name: String, url: String) {
         app.get_mut(self).environments.push(Environment {
             name: name,

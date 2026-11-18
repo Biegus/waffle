@@ -37,7 +37,10 @@ pub fn write<T: Serialize + Debug>(file_path: &str, entry: &T) {
     let content = serde_json::to_string_pretty(entry).unwrap();
     fs::write(file_path, content).unwrap()
 }
-pub fn write_list<T: Serialize + Namable + Debug>(base_path: &str, entries: &Vec<T>) {
+pub fn write_list<'a, T: Serialize + Namable + Debug + 'a>(
+    base_path: &str,
+    entries: impl Iterator<Item = &'a T>,
+) {
     let base_path = Path::new(base_path);
     for entry in entries {
         let name = entry.name();
