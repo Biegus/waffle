@@ -14,7 +14,7 @@ pub fn _serializer_required(v: Option<bool>) -> &'static str {
 }
 pub fn serialize_parameter(parameter: &Parameter) -> String {
     return format!(
-        "{}{}:{} <- {}",
+        "{} {}:{} <- {}",
         _serializer_required(parameter.required),
         parameter.name,
         parameter.param_type.as_deref().unwrap_or("?"),
@@ -23,14 +23,18 @@ pub fn serialize_parameter(parameter: &Parameter) -> String {
 }
 pub fn serialize_endpoint_long(endpoint: &Endpoint) -> String {
     let schema = endpoint.schema.clone();
-    let serialized_parameters = schema
-        .parameters
-        .map(|t| t.iter().map(serialize_parameter).join("\n"));
+    let serialized_parameters = schema.parameters.map(|t| {
+        t.iter()
+            .sorted_by_key(|t| &t.location)
+            .rev()
+            .map(serialize_parameter)
+            .join("\n")
+    });
     let serialized_consumes = schema.consumes.map(|t| t.iter().join("\n\n"));
     let serialized_parameters = match serialized_parameters {
         Some(v) => {
             if v.is_empty() {
-                "0 parameters\n".to_string()
+                "\n\n0 parameters\n".to_string()
             } else {
                 format!("\n\nparameters:\n{v}")
             }
@@ -48,7 +52,7 @@ pub fn serialize_endpoint_long(endpoint: &Endpoint) -> String {
         }
     };
     return format!(
-        "{}:\n{:?} {}{}{}",
+        "{}:\n{:?} schema:{}{}{}",
         endpoint.name, endpoint.kind, endpoint.url, serialized_parameters, serialized_consumes
     );
 }
