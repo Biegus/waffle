@@ -22,8 +22,10 @@ pub enum HTTPMethod {
 }
 #[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct Parameter {
-    pub required: bool,
+    pub required: Option<bool>,
     pub name: String,
+    pub param_type: Option<String>,
+    pub location: String,
 }
 #[derive(Clone, Debug, new, serde::Serialize, serde::Deserialize, Default, PartialEq, Eq)]
 pub struct EndpointSchema {

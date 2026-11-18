@@ -148,13 +148,22 @@ impl Runtime {
         let result = Ok(format!("{}/{}", env.url, full));
         return result;
     }
-    pub fn create_endpoint(&mut self, app: AppLink, url: String, name: String, kind: HTTPMethod) {
+    pub fn create_endpoint(
+        &mut self,
+        app: AppLink,
+        url: String,
+        name: String,
+        kind: HTTPMethod,
+        schema: Option<EndpointSchema>,
+    ) -> EndpointLink {
+        let top_index = app.get(self).endpoints.len();
         app.get_mut(self).endpoints.push(Endpoint {
             url: url.replace("{", "<").replace("}", ">"),
             kind: kind,
             name,
-            schema: EndpointSchema::default(),
+            schema: schema.unwrap_or(EndpointSchema::default()),
         });
+        return EndpointLink(app.0, top_index);
     }
     pub fn get_endpoint<'a>(&'a self, app: AppLink, name: &str) -> Option<EndpointLink> {
         let index = app
@@ -349,11 +358,13 @@ impl Runtime {
         let spec =
             openapi::from_path(path).str_er_with_context("Failed to parse from given path")?;
         let app_instance = app.get(self);
-        let existing_patches: HashSet<(String, HTTPMethod)> = app_instance
+        let existing_patches: HashMap<(String, HTTPMethod), EndpointLink> = app_instance
             .endpoints
             .iter()
             .map(|t| (t.url.replace("<", "{").replace(">", "}"), t.kind))
             .map(|(t, m)| (Runtime::_equate_path(&t), m))
+            .enumerate()
+            .map(|(i, (t, m))| ((t, m), EndpointLink(app.0, i)))
             .collect(); // fix me: regardles of how they are saved there should be type to save them agnosticily
 
         for (path, operations) in spec.paths.into_iter() {
@@ -385,18 +396,30 @@ impl Runtime {
                     continue;
                 }
                 let name = name.unwrap();
-                if existing_patches.contains(&(equated_path.clone(), method)) {
-                    // fixme: this clone can probably be removed
-                    self.tunnel.log("Will skip, already exists!");
-                    continue;
-                }
+                let existing = existing_patches
+                    .get(&(equated_path.clone(), method))
+                    .map(|t| *t);
+                let endpoint = existing.unwrap_or_else(|| {
+                    self.create_endpoint(
+                        app,
+                        path.clone(), // fixme: this clone can probably be removed
+                        name.replace(".", "").to_lowercase(),
+                        method,
+                        None,
+                    )
+                });
 
-                self.create_endpoint(
-                    app,
-                    path.clone(),
-                    name.replace(".", "").to_lowercase(),
-                    method,
-                );
+                let schema_parameters = op
+                    .parameters
+                    .unwrap_or(Vec::new())
+                    .into_iter()
+                    .map(|param| {
+                        Parameter::new(param.required, param.name, param.param_type, param.location)
+                    })
+                    .collect_vec();
+                endpoint.get_mut(self).schema =
+                    EndpointSchema::new(Some(schema_parameters), op.consumes)
+                
             }
         }
         self.tunnel.log(&format!(

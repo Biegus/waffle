@@ -46,6 +46,7 @@ impl FromStr for PayloadInput {
 #[derive(Clone)]
 struct CliMap(pub HashMap<String, String>);
 
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct MainArgs {
@@ -68,6 +69,8 @@ pub enum MasterCommand {
     #[clap(visible_alias = "as")]
     Apps(AppsSetup),
     App(AppSetup),
+    #[clap(visible_alias = "s")]
+    Send(Send),
 
     #[clap(visible_alias = "es")]
     Endpoints(EndpointsSetup),
@@ -109,7 +112,7 @@ pub struct EndpointsSetup {
 pub struct EndpointSetup {
     pub name: String,
     #[command(subcommand)]
-    pub command: EndpointCommand,
+    pub command: Option<EndpointCommand>,
 }
 #[derive(Subcommand, Debug)]
 pub enum EndpointsCommand {
@@ -117,11 +120,11 @@ pub enum EndpointsCommand {
     Create(EndpointCreate),
     #[clap(visible_alias = "l")]
     List(EndpointsList),
+
+    LoadSchema(LoadSchema),
 }
 #[derive(Subcommand, Debug)]
 pub enum EndpointCommand {
-    #[clap(visible_alias = "s")]
-    Send(EndpointSend),
     Rename(EndpointRename),
 }
 #[derive(Args, Debug)]
@@ -155,7 +158,8 @@ pub enum RetryType {
 }
 
 #[derive(Args, Debug)]
-pub struct EndpointSend {
+pub struct Send {
+    pub endpoint: String,
     pub pparams: Vec<String>,
 
     #[arg(short, long, value_parser=parse_map_entry)]
@@ -197,9 +201,7 @@ pub struct AppSetup {
     pub command: AppCommand,
 }
 #[derive(Subcommand, Debug)]
-pub enum AppCommand {
-    LoadSchema(LoadSchema),
-}
+pub enum AppCommand {}
 #[derive(Args, Debug)]
 pub struct LoadSchema {
     pub file: String,
@@ -275,9 +277,9 @@ pub fn can_env_be_passed(t: &MasterCommand) -> bool {
         && matches!(
             t,
             MasterCommand::Endpoint(EndpointSetup {
-                command: EndpointCommand::Send(_) | EndpointCommand::Rename(_),
+                command: Some(EndpointCommand::Rename(_)),
                 ..
-            }),
+            }) | MasterCommand::Send(_),
         );
 }
 

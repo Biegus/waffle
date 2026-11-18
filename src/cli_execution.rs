@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use jq::JsonFilter;
 
-use crate::cli_output_serializers::simple_serialize_endpoint;
+use crate::cli_output_serializers::{serialize_endpoint_long, simple_serialize_endpoint};
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
 use crate::objects::*;
 use crate::runtime::{AppLink, EnvironmentLink, Runtime, SendError};
@@ -153,7 +153,7 @@ fn handle_internal(
             let app = require_app_set(app)?;
             match endpoints_setup.command {
                 EndpointsCommand::Create(EndpointCreate { name, url, kind }) => {
-                    r.create_endpoint(app, url, name, kind);
+                    r.create_endpoint(app, url, name, kind, None);
                 }
                 EndpointsCommand::List(endpoints_list) => {
                     print!(
@@ -161,11 +161,13 @@ fn handle_internal(
                         (app.get(r).endpoints.iter().map(simple_serialize_endpoint)).join("\n")
                     )
                 }
+                EndpointsCommand::LoadSchema(load_schema) => {
+                    r.load_schema(app, &load_schema.file)?;
+                }
             }
         }
         MasterCommand::Endpoint(endpoint_setup) => {
             let app = require_app_set(app)?;
-            let env = require_env_set(env)?;
             let endpoint = r.get_endpoint(app, &endpoint_setup.name).ok_or_else(|| {
                 format!(
                     "Endpoint not found: {} in app {}",
@@ -174,86 +176,10 @@ fn handle_internal(
                 )
             })?;
             match endpoint_setup.command {
-                EndpointCommand::Send(endpoint_send) => {
-                    let params: HashMap<String, String> = endpoint_send
-                        .params
-                        .unwrap_or_default()
-                        .into_iter()
-                        .collect();
-                    let mut payload: Option<Json> = handle_entry_payload(r, endpoint_send.input)?;
-                    payload = handle_payload_mod(r, payload, endpoint_send.mod_jq, None)?;
-
-                    let payload = payload.map(|t| t.to_string());
-                    let payload = payload.as_deref();
-
-                    let result = loop {
-                        let maybe_result =
-                            r.send(env, endpoint, &params, &endpoint_send.pparams, payload);
-
-                        if let Err(failed) = maybe_result {
-                            if !match failed {
-                                SendError::HTTPSendError(_) => {
-                                    endpoint_send.retry_on.contains(&RetryType::Net)
-                                }
-                                SendError::AuthenticationMethodMisbehaved(_) => endpoint_send
-                                    .retry_on
-                                    .contains(&RetryType::AuthenticationMisbehaved),
-                                _ => false,
-                            } {
-                                break Err(failed).stringify_er()?;
-                            }
-                            r.tunnel.user_info(&format!(
-                                "Sending failed: {failed}, will retry in 3s..."
-                            ));
-                            sleep(Duration::from_secs(3));
-                            continue;
-                        }
-
-                        break maybe_result.stringify_er()?;
-                    };
-
-                    let status = result.status();
-
-                    if let Ok(text) = &result.text() {
-                        if let Ok(output_as_json) = serde_json::from_str::<serde_json::Value>(text)
-                        {
-                            let output = serde_json::to_string_pretty(&output_as_json)
-                                .expect("deseralization after serialization must work");
-                            if status.is_success() {
-                                if let Some(get) = endpoint_send.out_get {
-                                    match output_as_json.get(&get) {
-                                        Some(value) => println!("{value}"),
-                                        None => {
-                                            return Err(format!(
-                                                "{get} is not valid field\n{output}"
-                                            ));
-                                        }
-                                    }
-                                    return Ok(0);
-                                }
-                            }
-                            eprintln!("{status}");
-                            println!("{}", output);
-                        } else {
-                            if endpoint_send.out_get.is_some() {
-                                return Err("Endpoint is not a json, can't grab field".to_string());
-                            }
-                            eprintln!("{status}");
-                            println!("{}", text);
-                        }
-                    } else {
-                        if endpoint_send.out_get.is_some() {
-                            return Err("No text, can't grab field".to_string());
-                        }
-                        println!("{status}:(no text)")
-                    }
-                    if !status.is_success() {
-                        return Ok(status.as_u16() as i32);
-                    }
-                }
-                EndpointCommand::Rename(endpoint_rename) => {
+                Some(EndpointCommand::Rename(endpoint_rename)) => {
                     endpoint.get_mut(r).name = endpoint_rename.to
                 }
+                None => println!("{}", serialize_endpoint_long(&endpoint.get(r))),
             }
         }
         MasterCommand::Environment(environment_setup) => {
@@ -317,8 +243,77 @@ fn handle_internal(
         MasterCommand::App(app_setup) => {
             let app = r.find_app(Some(&app_setup.app))?;
             r.tunnel.log(&format!("Found app: {}", app.get(r).name));
-            match app_setup.command {
-                AppCommand::LoadSchema(load_schema) => r.load_schema(app, &load_schema.file)?,
+        }
+        MasterCommand::Send(send) => {
+            let app = require_app_set(app)?;
+            let env = require_env_set(env)?;
+            let endpoint = r
+                .get_endpoint(app, &send.endpoint)
+                .ok_or("Endpoint doesn't exists".to_string())?;
+            let params: HashMap<String, String> =
+                send.params.unwrap_or_default().into_iter().collect();
+            let mut payload: Option<Json> = handle_entry_payload(r, send.input)?;
+            payload = handle_payload_mod(r, payload, send.mod_jq, None)?;
+
+            let payload = payload.map(|t| t.to_string());
+            let payload = payload.as_deref();
+
+            let result = loop {
+                let maybe_result = r.send(env, endpoint, &params, &send.pparams, payload);
+
+                if let Err(failed) = maybe_result {
+                    if !match failed {
+                        SendError::HTTPSendError(_) => send.retry_on.contains(&RetryType::Net),
+                        SendError::AuthenticationMethodMisbehaved(_) => {
+                            send.retry_on.contains(&RetryType::AuthenticationMisbehaved)
+                        }
+                        _ => false,
+                    } {
+                        break Err(failed).stringify_er()?;
+                    }
+                    r.tunnel
+                        .user_info(&format!("Sending failed: {failed}, will retry in 3s..."));
+                    sleep(Duration::from_secs(3));
+                    continue;
+                }
+
+                break maybe_result.stringify_er()?;
+            };
+
+            let status = result.status();
+
+            if let Ok(text) = &result.text() {
+                if let Ok(output_as_json) = serde_json::from_str::<serde_json::Value>(text) {
+                    let output = serde_json::to_string_pretty(&output_as_json)
+                        .expect("deseralization after serialization must work");
+                    if status.is_success() {
+                        if let Some(get) = send.out_get {
+                            match output_as_json.get(&get) {
+                                Some(value) => println!("{value}"),
+                                None => {
+                                    return Err(format!("{get} is not valid field\n{output}"));
+                                }
+                            }
+                            return Ok(0);
+                        }
+                    }
+                    eprintln!("{status}");
+                    println!("{}", output);
+                } else {
+                    if send.out_get.is_some() {
+                        return Err("Endpoint is not a json, can't grab field".to_string());
+                    }
+                    eprintln!("{status}");
+                    println!("{}", text);
+                }
+            } else {
+                if send.out_get.is_some() {
+                    return Err("No text, can't grab field".to_string());
+                }
+                println!("{status}:(no text)")
+            }
+            if !status.is_success() {
+                return Ok(status.as_u16() as i32);
             }
         }
     }
