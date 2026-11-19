@@ -46,7 +46,6 @@ impl FromStr for PayloadInput {
 #[derive(Clone)]
 struct CliMap(pub HashMap<String, String>);
 
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct MainArgs {
@@ -87,20 +86,20 @@ pub struct HookSetup {
 }
 #[derive(Subcommand, Debug)]
 pub enum HookCommand {
-    SetDefaultApp(SetDefaultApp),
-    SetDefaultEnv(SetDefaultEnv),
-    GetDefaultApp,
-    GetDefaultEnv,
+    #[clap(visible_alias = "da")]
+    DefaultApp(DefaultApp),
+    #[clap(visible_alias = "de")]
+    DefaultEnv(DefaultEnv),
 }
 
 #[derive(Args, Debug)]
-pub struct SetDefaultApp {
-    pub name: String,
+pub struct DefaultApp {
+    pub value: Option<String>,
 }
 
 #[derive(Args, Debug)]
-pub struct SetDefaultEnv {
-    pub name: String,
+pub struct DefaultEnv {
+    pub value: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -268,7 +267,7 @@ pub fn can_app_be_passed(t: &MasterCommand) -> bool {
         t,
         MasterCommand::Apps(_)
             | MasterCommand::Hook(HookSetup {
-                command: HookCommand::GetDefaultApp | HookCommand::SetDefaultApp(_)
+                command: HookCommand::DefaultApp(_)
             })
     ) && !matches!(t, MasterCommand::App(_));
 }

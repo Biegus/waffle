@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use jq::JsonFilter;
+use serde::de;
 
 use crate::cli_output_serializers::{serialize_endpoint_long, simple_serialize_endpoint};
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
@@ -213,32 +214,30 @@ fn handle_internal(
             }
         }
         MasterCommand::Hook(hook_setup) => match hook_setup.command {
-            HookCommand::SetDefaultApp(set_default_app) => {
-                r.hook.default_app = Some(set_default_app.name)
-            }
-            HookCommand::SetDefaultEnv(set_default_env) => {
-                let app = require_app_set(app)?;
-                r.hook
-                    .default_envs
-                    .insert(app.get(r).name.clone(), set_default_env.name);
-            }
-            HookCommand::GetDefaultApp => {
-                print!("{}", r.hook.default_app.clone().unwrap_or("".to_string()))
-            }
-            HookCommand::GetDefaultEnv => {
-                if app.is_none() {
-                    return Ok(0);
+            HookCommand::DefaultApp(default_app) => match default_app.value {
+                Some(value) => r.hook.default_app = Some(value),
+                None => print!("{}", r.hook.default_app.clone().unwrap_or("".to_string())),
+            },
+            HookCommand::DefaultEnv(default_env) => match default_env.value {
+                Some(v) => {
+                    let app = require_app_set(app)?;
+                    r.hook.default_envs.insert(app.get(r).name.clone(), v);
                 }
-                let app = require_app_set(app)?;
-                print!(
-                    "{}",
-                    &r.hook
-                        .default_envs
-                        .get(&app.get(r).name)
-                        .as_deref()
-                        .unwrap_or(&"".to_string())
-                )
-            }
+                None => {
+                    if app.is_none() {
+                        return Ok(0);
+                    }
+                    let app = require_app_set(app)?;
+                    print!(
+                        "{}",
+                        &r.hook
+                            .default_envs
+                            .get(&app.get(r).name)
+                            .as_deref()
+                            .unwrap_or(&"".to_string())
+                    );
+                }
+            },
         },
         MasterCommand::App(app_setup) => {
             let app = r.find_app(Some(&app_setup.app))?;
