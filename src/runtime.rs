@@ -1,9 +1,13 @@
 use crate::helper;
 use crate::helper::ResultExtension;
-use crate::logger::Tunel;
+use crate::logger::Tunnel;
 use crate::objects::*;
+use crate::openapi_helper;
 use crate::serializer_helper;
+use map_tuple::TupleMap0;
+use map_tuple::TupleMap1;
 use regex::Regex;
+use serde_json::from_str;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::convert::identity;
@@ -31,7 +35,7 @@ pub struct Runtime {
     pub apps: Vec<App>,
     pub hook: Hook,
     pub client: reqwest::blocking::Client,
-    pub tunnel: Box<dyn Tunel>,
+    pub tunnel: Box<dyn Tunnel>,
 }
 
 #[derive(Clone, Copy)]
@@ -161,7 +165,7 @@ impl Runtime {
             url: url.replace("{", "<").replace("}", ">"),
             kind: kind,
             name,
-            schema: schema.unwrap_or(EndpointSchema::default()),
+            schema: schema,
         });
         return EndpointLink(app.0, top_index);
     }
@@ -353,10 +357,8 @@ impl Runtime {
         let regex = Regex::new(r"\{.*?\}").unwrap();
         return regex.replace_all(t, "").to_string();
     }
-    pub fn load_schema(&mut self, app: AppLink, path: &str) -> Result<(), String> {
+    pub fn load_schema(&mut self, app: AppLink, spec: openapiv3::OpenAPI) -> Result<(), String> {
         let endpoints_len_at_start = app.get(self).endpoints.len();
-        let spec =
-            openapi::from_path(path).str_er_with_context("Failed to parse from given path")?;
         let app_instance = app.get(self);
         let existing_patches: HashMap<(String, HTTPMethod), EndpointLink> = app_instance
             .endpoints
@@ -367,8 +369,16 @@ impl Runtime {
             .map(|(i, (t, m))| ((t, m), EndpointLink(app.0, i)))
             .collect(); // fix me: regardles of how they are saved there should be type to save them agnosticily
 
-        for (path, operations) in spec.paths.into_iter() {
-            let mut path = path;
+        for (path, operations) in spec.paths.iter() {
+            let maybe_operations = operations.clone().into_item();
+            if maybe_operations.is_none() {
+                self.tunnel
+                    .warning(&format!("Unresolverable ref found at {path}"));
+                continue;
+            }
+            let operations = maybe_operations.unwrap();
+            let mut path = path.to_string();
+            // according to open api specs, they should always start with slash, check for sanity anywa
             if path.starts_with(r"/") {
                 self.tunnel.log("skip slash");
                 path = path[1..].to_string();
@@ -390,7 +400,11 @@ impl Runtime {
                     method, op.operation_id
                 ));
 
-                let name = op.operation_id.or(op.summary).map(|t| t.replace(" ", "_"));
+                let name = op
+                    .operation_id
+                    .clone()
+                    .or(op.summary.clone())
+                    .map(|t| t.replace(" ", "_"));
                 if name.is_none() {
                     self.tunnel.log("Will skip, can't decide on name");
                     continue;
@@ -408,18 +422,9 @@ impl Runtime {
                         None,
                     )
                 });
-
-                let schema_parameters = op
-                    .parameters
-                    .unwrap_or(Vec::new())
-                    .into_iter()
-                    .map(|param| {
-                        Parameter::new(param.required, param.name, param.param_type, param.location)
-                    })
-                    .collect_vec();
-                endpoint.get_mut(self).schema =
-                    EndpointSchema::new(Some(schema_parameters), op.consumes)
-                
+                endpoint.get_mut(self).schema = Some(
+                    openapi_helper::build_endpoint_schema_from_openapi_schema(&spec, &op),
+                )
             }
         }
         self.tunnel.log(&format!(

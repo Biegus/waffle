@@ -1,58 +1,95 @@
-use crate::objects::{App, Endpoint, Json, JsonMap, Parameter};
+use std::collections::HashMap;
+use std::iter::repeat;
+
+use crate::objects::{App, Endpoint, EndpointSchema, Json, JsonMap, Parameter};
+use crate::objects::{ParameterKind, ResponseSchema};
 use itertools::Itertools;
 use serde_json;
 
 pub fn simple_serialize_endpoint(endpoint: &Endpoint) -> String {
     return format!("{}: {:?} {}", endpoint.name, endpoint.kind, endpoint.url);
 }
-pub fn _serializer_required(v: Option<bool>) -> &'static str {
+pub fn _serializer_required(v: bool) -> &'static str {
     return match v {
-        None => "?",
-        Some(true) => "!",
-        Some(false) => "o",
+        true => "!",
+        false => "o",
     };
 }
 pub fn serialize_parameter(parameter: &Parameter) -> String {
     return format!(
-        "{} {}:{} <- {}",
+        "{} {}:{}",
         _serializer_required(parameter.required),
         parameter.name,
         parameter.param_type.as_deref().unwrap_or("?"),
-        parameter.location
     );
 }
-pub fn serialize_endpoint_long(endpoint: &Endpoint) -> String {
-    let schema = endpoint.schema.clone();
-    let serialized_parameters = schema.parameters.map(|t| {
-        t.iter()
-            .sorted_by_key(|t| &t.location)
-            .rev()
-            .map(serialize_parameter)
-            .join("\n")
-    });
-    let serialized_consumes = schema.consumes.map(|t| t.iter().join("\n\n"));
-    let serialized_parameters = match serialized_parameters {
-        Some(v) => {
-            if v.is_empty() {
-                "\n\n0 parameters\n".to_string()
-            } else {
-                format!("\n\nparameters:\n{v}")
-            }
-        }
-        None => "".to_string(),
-    };
-    let serialized_consumes = match serialized_consumes {
-        None => "".to_string(),
-        Some(v) => {
-            if v.len() == 0 {
-                "".to_string()
-            } else {
-                format!("\n\nconsumes:{v}")
-            }
-        }
-    };
+pub fn serialize_parameters(params: &HashMap<ParameterKind, Vec<Parameter>>) -> String {
+    return params
+        .iter()
+        .filter(|(kind, _)| **kind != ParameterKind::Path)
+        .map(|(kind, parameters)| {
+            format!(
+                "{kind}:\n:{}",
+                parameters.iter().map(serialize_parameter).join("\n")
+            )
+        })
+        .join("\n");
+}
+pub fn serialize_response(response: &ResponseSchema) -> String {
     return format!(
-        "{}:\n{:?} schema:{}{}{}",
-        endpoint.name, endpoint.kind, endpoint.url, serialized_parameters, serialized_consumes
+        "{}: {}{}",
+        response.status_code,
+        response.description.as_ref().unwrap_or(&String::default()),
+        match &response.schema_example {
+            Some(v) => format!(
+                "\n{}",
+                serde_json::to_string_pretty(v).unwrap_or("Json Parser Error".to_string())
+            ),
+            None => String::default(),
+        }
+    );
+}
+
+pub fn serialize_schema(schema: &EndpointSchema) -> String {
+    return format!(
+        "{}{}{}",
+        match &schema.params.len() {
+            0 => String::default(),
+            _ => format!("\n{}", serialize_parameters(&schema.params)),
+        },
+        match &schema.request_schema {
+            Some(v) => format!(
+                "\n{}",
+                &serde_json::to_string_pretty(&v.schema_example)
+                    .unwrap_or("Json Parsing Error".to_string()),
+            ),
+            None => {
+                String::default()
+            }
+        },
+        match &schema.responses_schema.len() {
+            0 => String::default(),
+            _ => format!(
+                "\n{}",
+                &schema
+                    .responses_schema
+                    .iter()
+                    .map(serialize_response)
+                    .join("\n"),
+            ),
+        }
+    );
+}
+
+pub fn serialize_endpoint_long(endpoint: &Endpoint) -> String {
+    return format!(
+        "{} -> {:?} {}{}",
+        endpoint.name,
+        endpoint.kind,
+        endpoint.url,
+        match &endpoint.schema {
+            Some(s) => format!("{}", serialize_schema(s)),
+            None => String::default(),
+        },
     );
 }

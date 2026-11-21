@@ -3,7 +3,7 @@ use clap;
 use derive_new::new;
 use reqwest::{self};
 use serde;
-use std::{any::Any, collections::HashMap, time::Duration};
+use std::{any::Any, collections::HashMap, default, time::Duration};
 
 use crate::helper;
 
@@ -20,24 +20,48 @@ pub enum HTTPMethod {
     DELETE,
     PATCH,
 }
+
+#[derive(
+    PartialEq, Eq, Hash, Clone, Debug, serde::Serialize, serde::Deserialize, derive_more::Display,
+)]
+pub enum ParameterKind {
+    Query,
+    Header,
+    Path,
+    Cookie,
+}
 #[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct Parameter {
-    pub required: Option<bool>,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
     pub param_type: Option<String>,
-    pub location: String,
+}
+#[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+pub struct PayloadSchema {
+    pub schema_example: Json,
+}
+#[derive(new, Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+pub struct ResponseSchema {
+    pub status_code: String,
+    pub schema_example: Option<Json>,
+    pub description: Option<String>,
 }
 #[derive(Clone, Debug, new, serde::Serialize, serde::Deserialize, Default, PartialEq, Eq)]
 pub struct EndpointSchema {
-    pub parameters: Option<Vec<Parameter>>,
-    pub consumes: Option<Vec<String>>,
+    pub params: HashMap<ParameterKind, Vec<Parameter>>,
+    pub request_schema: Option<PayloadSchema>,
+    #[serde(default)]
+    pub responses_schema: Vec<ResponseSchema>,
 }
 #[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     pub url: String,
     pub kind: HTTPMethod,
     pub name: String,
-    pub schema: EndpointSchema,
+    pub schema: Option<EndpointSchema>,
 }
 
 #[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]

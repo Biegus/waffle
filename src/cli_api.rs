@@ -51,8 +51,13 @@ struct CliMap(pub HashMap<String, String>);
 pub struct MainArgs {
     #[command(subcommand)]
     pub command: MasterCommand,
-    #[arg(long)]
+    #[arg(long, short('v'))]
     pub logs: bool,
+    #[arg(long)]
+    pub quiet: bool,
+    #[arg(long)]
+    pub mute: bool,
+
     #[arg(long, short)]
     pub app: Option<String>,
     #[arg(long, short)]
@@ -290,4 +295,21 @@ pub fn validate_high_level_valid(t: &MainArgs) -> Result<(), String> {
         return Err(format!("env parameter is not allowed in such context"));
     }
     return Ok(());
+}
+
+#[derive(Debug, Clone)]
+pub struct EnvWarning(pub String);
+pub fn add_context_from_given_env_vars(
+    args: &mut MainArgs,
+    vars: &HashMap<String, String>,
+) -> Vec<EnvWarning> {
+    let coerce_logs = vars.get("WAFFLE_LOGS") == Some(&"1".to_string());
+    let corce_retry = vars.get("WAFFLE_RETRY") == Some(&"1".to_string());
+    args.logs = args.logs || coerce_logs;
+
+    if corce_retry && let MasterCommand::Send(send) = &mut args.command {
+        send.retry_on.push(RetryType::Net);
+        send.retry_on.dedup();
+    }
+    return vec![];
 }

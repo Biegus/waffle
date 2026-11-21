@@ -1,6 +1,7 @@
 mod cli_api;
 mod cli_execution;
 mod cli_output_serializers;
+mod openapi_helper;
 mod helper;
 mod logger;
 mod objects;
@@ -8,15 +9,16 @@ mod runtime;
 mod serializer_helper;
 mod tests;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{collections::HashMap, fs};
 
-use crate::cli_api::MainArgs;
+use crate::cli_api::{MainArgs, add_context_from_given_env_vars};
 use crate::helper::ResultExtension;
-use crate::logger::Tunel;
+use crate::logger::{Tunnel, TunnelOutputKind};
 use crate::runtime::*;
 use crate::{logger::StdTunnel, objects::Environment};
 
@@ -26,11 +28,6 @@ use clap::Parser;
 use itertools::Itertools;
 use reqwest::StatusCode;
 use sysdirs;
-
-fn fail(t: &str) {
-    eprint!("{t}");
-    exit(1)
-}
 
 const APPS_DIRECTORY: &str = ".waffle";
 const HOOK_FILE_PATH: &str = ".waffle-hook";
@@ -51,7 +48,7 @@ pub fn read_snapshot() -> Snapshot {
         .unwrap_or(Hook::default());
     return Snapshot::new(apps, hook);
 }
-pub fn create_runtime(tunnel: Box<dyn Tunel>, snapshot: Snapshot) -> Runtime {
+pub fn create_runtime(tunnel: Box<dyn Tunnel>, snapshot: Snapshot) -> Runtime {
     let client = reqwest::blocking::Client::new();
     return Runtime {
         apps: snapshot.apps,
@@ -64,7 +61,7 @@ pub fn create_runtime(tunnel: Box<dyn Tunel>, snapshot: Snapshot) -> Runtime {
 pub fn handle_state_change(
     snapshot: &Snapshot,
     org_snapshot: &Snapshot,
-    logger: &impl Tunel,
+    logger: &impl Tunnel,
 ) -> Result<(), String> {
     if read_snapshot() != *org_snapshot {
         return Err("There was write in between".to_string());
@@ -85,12 +82,24 @@ pub fn handle_state_change(
     return Ok(());
 }
 
+fn construct_tunnel_output_kinds(args: &MainArgs) -> HashSet<TunnelOutputKind> {
+    use TunnelOutputKind as T;
+    HashSet::from_iter(match (args.logs, args.quiet, args.mute) {
+        (_, _, true) => vec![],
+        (_, true, false) => vec![T::Warning, T::Error],
+        (true, false, false) => vec![T::Warning, T::Error, T::Log],
+        (false, false, false) => vec![T::Warning, T::Error],
+    })
+}
+
 fn main() -> Result<(), String> {
-    let args = MainArgs::parse();
+    let mut args = MainArgs::parse();
+
     let vars: HashMap<String, String> = std::env::vars().collect();
-    let tunnel = Box::new(StdTunnel::new(
-        args.logs || vars.get("WAFFLE_LOGS") == Some(&"1".to_string()),
-    ));
+    add_context_from_given_env_vars(&mut args, &vars);
+
+    let tunnel = Box::new(StdTunnel::new(construct_tunnel_output_kinds(&args)));
+
     let org_snapshot = read_snapshot();
     let mut runtime = create_runtime(tunnel.clone(), org_snapshot.clone());
 

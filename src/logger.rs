@@ -1,26 +1,47 @@
+use std::collections::{HashSet, VecDeque};
+
 use derive_new::new;
 
-pub trait Tunel {
-    fn log(&self, t: &str);
-    fn user_info(&self, t: &str);
-    fn error(&self, t: &str);
-}
-#[derive(new, Default, Clone)]
-pub struct StdTunnel {
-    pub log_to_std: bool,
+#[derive(PartialEq, Eq, Clone, Copy, derive_more::Display, Hash)]
+pub enum TunnelOutputKind {
+    Error,
+    UserInfo,
+    Warning,
+    Log,
+    Debug,
 }
 
-impl Tunel for StdTunnel {
-    fn user_info(&self, t: &str) {
-        eprintln!("INFO:{t}")
+pub trait Tunnel {
+    fn write(&self, kind: TunnelOutputKind, t: &str);
+    fn error(&self, t: &str) {
+        self.write(TunnelOutputKind::Error, t)
     }
     fn log(&self, t: &str) {
-        if self.log_to_std {
-            eprintln!("LOG: {t}")
+        self.write(TunnelOutputKind::Log, t);
+    }
+    fn user_info(&self, t: &str) {
+        self.write(TunnelOutputKind::UserInfo, t);
+    }
+    fn warning(&self, t: &str) {
+        self.write(TunnelOutputKind::Warning, t);
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct StdTunnel {
+    pub logs: HashSet<TunnelOutputKind>,
+}
+
+impl Tunnel for StdTunnel {
+    fn write(&self, kind: TunnelOutputKind, t: &str) {
+        if self.logs.contains(&kind) {
+            eprintln!("{kind}: {t}")
         }
     }
+}
 
-    fn error(&self, t: &str) {
-        eprint!("ERROR: {t}")
+impl StdTunnel {
+    pub fn new(logs: HashSet<TunnelOutputKind>) -> StdTunnel {
+        return StdTunnel { logs };
     }
 }

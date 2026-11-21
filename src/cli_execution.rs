@@ -9,12 +9,13 @@ use crate::runtime::{AppLink, EnvironmentLink, Runtime, SendError};
 use crate::{cli_api::*, helper};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
-use std::env;
 use std::fs;
+use std::path::Path;
 use std::process::exit;
 use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{env, path};
 
 pub fn handle(args: MainArgs, runtime: &mut Runtime, vars: &HashMap<String, String>) -> i32 {
     match handle_internal(args, runtime, vars) {
@@ -163,7 +164,20 @@ fn handle_internal(
                     )
                 }
                 EndpointsCommand::LoadSchema(load_schema) => {
-                    r.load_schema(app, &load_schema.file)?;
+                    let extension = Path::new(&load_schema.file)
+                        .extension()
+                        .ok_or("Couldn't determine extension of schema file")?;
+                    let content = fs::read_to_string(&load_schema.file)
+                        .str_er_with_context("During reading schema file to memory")?;
+                    let api = match extension.to_str().unwrap() {
+                        "yaml" => serde_yaml::from_str(&content)
+                            .str_er_with_context("During parsing yaml"),
+                        "json" => serde_json::from_str(&content)
+                            .str_er_with_context("During parsing json"),
+                        a => return Err(format!("Unrecognized extension type: {a}")),
+                    }?;
+
+                    r.load_schema(app, api)?;
                 }
             }
         }
