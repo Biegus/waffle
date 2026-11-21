@@ -1,15 +1,16 @@
 mod cli_api;
 mod cli_execution;
 mod cli_output_serializers;
-mod openapi_helper;
 mod helper;
 mod logger;
 mod objects;
+mod openapi_helper;
 mod runtime;
 mod serializer_helper;
 mod tests;
 
 use std::collections::HashSet;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::thread::sleep;
@@ -17,6 +18,7 @@ use std::time::Duration;
 use std::{collections::HashMap, fs};
 
 use crate::cli_api::{MainArgs, add_context_from_given_env_vars};
+use crate::cli_execution::CliExecutionContext;
 use crate::helper::ResultExtension;
 use crate::logger::{Tunnel, TunnelOutputKind};
 use crate::runtime::*;
@@ -58,11 +60,14 @@ pub fn create_runtime(tunnel: Box<dyn Tunnel>, snapshot: Snapshot) -> Runtime {
     };
 }
 
-pub fn handle_state_change(
+pub fn handle_state_change<T>(
     snapshot: &Snapshot,
     org_snapshot: &Snapshot,
-    logger: &impl Tunnel,
-) -> Result<(), String> {
+    logger: &T,
+) -> Result<(), String>
+where
+    T: ?Sized + Tunnel,
+{
     if read_snapshot() != *org_snapshot {
         return Err("There was write in between".to_string());
     }
@@ -99,13 +104,17 @@ fn main() -> Result<(), String> {
     add_context_from_given_env_vars(&mut args, &vars);
 
     let tunnel = Box::new(StdTunnel::new(construct_tunnel_output_kinds(&args)));
-
     let org_snapshot = read_snapshot();
-    let mut runtime = create_runtime(tunnel.clone(), org_snapshot.clone());
+    let mut runtime = create_runtime(tunnel, org_snapshot.clone());
 
-    let code = cli_execution::handle(args, &mut runtime, &vars);
+    let is_terminal = std::io::stdin().is_terminal();
+
+    let mut execution_context = CliExecutionContext::new(args, vars, is_terminal);
+
+    let code = cli_execution::handle(&mut runtime, &mut execution_context);
     if code == 0 {
-        handle_state_change(&runtime.into_snapshot(), &org_snapshot, tunnel.as_ref())?;
+        let tunnel = &runtime.tunnel;
+        handle_state_change(&runtime.create_snapshot(), &org_snapshot, tunnel.as_ref())?;
     } else {
         exit(code)
     }

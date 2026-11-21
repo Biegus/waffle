@@ -1,12 +1,13 @@
 use itertools::Itertools;
 use jq::JsonFilter;
-use serde::de;
+use serde::{Deserialize, Serialize, de};
 
 use crate::cli_output_serializers::{serialize_endpoint_long, simple_serialize_endpoint};
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
 use crate::objects::*;
 use crate::runtime::{AppLink, EnvironmentLink, Runtime, SendError};
 use crate::{cli_api::*, helper};
+use colored_json::{prelude::*, to_colored_json_auto};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -16,9 +17,15 @@ use std::str::FromStr;
 use std::thread::sleep;
 use std::time::Duration;
 use std::{env, path};
+#[derive(derive_new::new)]
+pub struct CliExecutionContext {
+    pub args: MainArgs,
+    pub vars: HashMap<String, String>,
+    pub is_terminal: bool,
+}
 
-pub fn handle(args: MainArgs, runtime: &mut Runtime, vars: &HashMap<String, String>) -> i32 {
-    match handle_internal(args, runtime, vars) {
+pub fn handle(runtime: &mut Runtime, execution_context: &mut CliExecutionContext) -> i32 {
+    match handle_internal(runtime, execution_context) {
         Ok(v) => return v,
         Err(msg) => {
             eprintln!("E: {msg}");
@@ -102,15 +109,23 @@ fn require_env_set(env: Option<EnvironmentLink>) -> Result<EnvironmentLink, Stri
     ))
 }
 
+fn to_formatted_json_string<T: Serialize>(t: T, execution_context: &CliExecutionContext) -> String {
+    const ASSUMUPTION: &'static str = "There's an assumption for block to be json convertable";
+    let mut res = serde_json::to_string_pretty(&t).expect(ASSUMUPTION);
+    if execution_context.is_terminal {
+        res = res.to_colored_json_auto().expect(ASSUMUPTION);
+    }
+    return res;
+}
 fn handle_internal(
-    args: MainArgs,
     r: &mut Runtime,
-    vars: &HashMap<String, String>,
+    execution_context: &mut CliExecutionContext,
 ) -> Result<i32, String> {
+    let args = execution_context.args.clone();
     validate_high_level_valid(&args)?; // fixme: include those additional validation in clap object
     let mut app = None;
     let mut env = None;
-    if let Some(app_name) = &args.app {
+    if let Some(app_name) = args.app {
         app = Some(r.find_app(Some(app_name.as_str()))?)
     } else if can_app_be_passed(&args.command) {
         app = r.get_default_app().ok();
@@ -119,7 +134,7 @@ fn handle_internal(
         }
     }
 
-    if let Some(env_name) = args.env {
+    if let Some(env_name) = &args.env {
         let app = require_app_set(app)?;
         env = Some(r.find_env(app, Some(env_name.as_str()))?);
     } else if can_env_be_passed(&args.command) {
@@ -137,7 +152,7 @@ fn handle_internal(
         r.tunnel.log(&format!("env: {}", env.get(r).name))
     }
 
-    match args.command {
+    match args.command.clone() {
         MasterCommand::Environments(environment_setup) => {
             let app = require_app_set(app)?;
             match environment_setup.command {
@@ -164,8 +179,7 @@ fn handle_internal(
                     ),
                     true => println!(
                         "{}",
-                        serde_json::to_string(&app.get(r).endpoints)
-                            .expect("Should be convertable to json")
+                        to_formatted_json_string(&app.get(r).endpoints, execution_context)
                     ),
                 },
                 EndpointsCommand::LoadSchema(load_schema) => {
@@ -203,8 +217,7 @@ fn handle_internal(
                     false => println!("{}", serialize_endpoint_long(&endpoint.get(r))),
                     true => println!(
                         "{}",
-                        serde_json::to_string_pretty(&endpoint.get(r).schema)
-                            .expect("Structure should be convertable to json")
+                        to_formatted_json_string(&endpoint.get(r).schema, &execution_context)
                     ),
                 },
             }
@@ -309,8 +322,7 @@ fn handle_internal(
 
             if let Ok(text) = &result.text() {
                 if let Ok(output_as_json) = serde_json::from_str::<serde_json::Value>(text) {
-                    let output = serde_json::to_string_pretty(&output_as_json)
-                        .expect("deseralization after serialization must work");
+                    let output = to_formatted_json_string(&output_as_json, execution_context);
                     if status.is_success() {
                         if let Some(get) = send.out_get {
                             match output_as_json.get(&get) {

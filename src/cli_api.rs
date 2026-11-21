@@ -9,7 +9,7 @@ use crate::{
     objects::{HTTPMethod, Json, JsonMap},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum PayloadInput {
     File(String),
     Template(String),
@@ -46,7 +46,7 @@ impl FromStr for PayloadInput {
 #[derive(Clone)]
 struct CliMap(pub HashMap<String, String>);
 
-#[derive(Parser, Debug)]
+#[derive(Clone, Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct MainArgs {
     #[command(subcommand)]
@@ -66,7 +66,7 @@ pub struct MainArgs {
     pub env: Option<String>,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum MasterCommand {
     #[clap(visible_alias = "envs")]
     Environments(EnvironmentsSetup),
@@ -86,12 +86,12 @@ pub enum MasterCommand {
     Hook(HookSetup),
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct HookSetup {
     #[command(subcommand)]
     pub command: HookCommand,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum HookCommand {
     #[clap(visible_alias = "da")]
     DefaultApp(DefaultApp),
@@ -99,28 +99,28 @@ pub enum HookCommand {
     DefaultEnv(DefaultEnv),
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct DefaultApp {
     pub value: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct DefaultEnv {
     pub value: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EndpointsSetup {
     #[command(subcommand)]
     pub command: EndpointsCommand,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EndpointSetup {
     pub name: String,
     #[command(subcommand)]
     pub command: Option<EndpointCommand>,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum EndpointsCommand {
     #[clap(visible_alias = "c")]
     Create(EndpointCreate),
@@ -129,25 +129,25 @@ pub enum EndpointsCommand {
 
     LoadSchema(LoadSchema),
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum EndpointCommand {
     Rename(EndpointRename),
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EndpointRename {
     pub to: String,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct TemplatesSetup {
     #[command(subcommand)]
     command: TemplatesCommand,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum TemplatesCommand {
     Create(TemplateCreate),
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct TemplateCreate {
     pub name: String,
     #[arg(long)]
@@ -157,13 +157,13 @@ pub struct TemplateCreate {
     #[arg(short, long)]
     pub jq: Option<String>,
 }
-#[derive(ValueEnum, Debug, Clone, PartialEq, Copy)]
+#[derive(Clone, ValueEnum, Debug, PartialEq, Copy)]
 pub enum RetryType {
     Net,
     AuthenticationMisbehaved,
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct Send {
     pub endpoint: String,
     pub pparams: Vec<String>,
@@ -187,77 +187,77 @@ pub struct Send {
     pub retry_on: Vec<RetryType>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EndpointCreate {
     pub name: String,
     pub kind: HTTPMethod,
     pub url: String,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EndpointsList {}
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct AppsSetup {
     #[command(subcommand)]
     pub command: AppsCommand,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct AppSetup {
     pub app: String,
     #[command(subcommand)]
     pub command: AppCommand,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum AppCommand {}
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct LoadSchema {
     pub file: String,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum AppsCommand {
     Create(AppCreate),
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct AppCreate {
     pub name: String,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EnvironmentSetup {
     pub name: Option<String>,
     #[command(subcommand)]
     pub command: EnvironmentCommand,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum EnvironmentCommand {
     SetAuthToken(SetAuthToken),
     SetAutoAuthToken(SetAutoAuthToken),
     SetAuthSimple(SetAuthSimple),
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct SetAutoAuthToken {
     pub method: HTTPMethod,
     pub endpoint: String, // fixme: maybe link to normal endpoint or otherwise handle repetition while setting auth
     pub payload: String,  // fixme: handle json/jq validation at cli api level !!
     pub output_jq: String,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct SetAuthToken {
     pub token: String,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct SetAuthSimple {
     pub username: String,
     pub password: Option<String>,
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EnvironmentsSetup {
     #[command(subcommand)]
     pub command: EnvironmentsCommand,
 }
-#[derive(Subcommand, Debug)]
+#[derive(Clone, Subcommand, Debug)]
 pub enum EnvironmentsCommand {
     Create(EnvironmentCreate),
 }
-#[derive(Args, Debug)]
+#[derive(Clone, Args, Debug)]
 pub struct EnvironmentCreate {
     pub name: String,
     pub url: String,
@@ -299,7 +299,7 @@ pub fn validate_high_level_valid(t: &MainArgs) -> Result<(), String> {
     return Ok(());
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct EnvWarning(pub String);
 pub fn add_context_from_given_env_vars(
     args: &mut MainArgs,
