@@ -57,6 +57,8 @@ pub struct MainArgs {
     pub quiet: bool,
     #[arg(long)]
     pub mute: bool,
+    #[arg(long)]
+    pub json: bool,
 
     #[arg(long, short)]
     pub app: Option<String>,

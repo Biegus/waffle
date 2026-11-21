@@ -157,12 +157,17 @@ fn handle_internal(
                 EndpointsCommand::Create(EndpointCreate { name, url, kind }) => {
                     r.create_endpoint(app, url, name, kind, None);
                 }
-                EndpointsCommand::List(endpoints_list) => {
-                    print!(
+                EndpointsCommand::List(endpoints_list) => match args.json {
+                    false => println!(
                         "{}",
                         (app.get(r).endpoints.iter().map(simple_serialize_endpoint)).join("\n")
-                    )
-                }
+                    ),
+                    true => println!(
+                        "{}",
+                        serde_json::to_string(&app.get(r).endpoints)
+                            .expect("Should be convertable to json")
+                    ),
+                },
                 EndpointsCommand::LoadSchema(load_schema) => {
                     let extension = Path::new(&load_schema.file)
                         .extension()
@@ -194,7 +199,14 @@ fn handle_internal(
                 Some(EndpointCommand::Rename(endpoint_rename)) => {
                     endpoint.get_mut(r).name = endpoint_rename.to
                 }
-                None => println!("{}", serialize_endpoint_long(&endpoint.get(r))),
+                None => match args.json {
+                    false => println!("{}", serialize_endpoint_long(&endpoint.get(r))),
+                    true => println!(
+                        "{}",
+                        serde_json::to_string_pretty(&endpoint.get(r).schema)
+                            .expect("Structure should be convertable to json")
+                    ),
+                },
             }
         }
         MasterCommand::Environment(environment_setup) => {
