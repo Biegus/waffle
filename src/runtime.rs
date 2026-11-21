@@ -324,7 +324,8 @@ impl Runtime {
             .build_url(endpoint, env, pparams)
             .map_err(SendError::URLBuildError)?;
         let payload_str = payload.unwrap_or("").to_string();
-        self.tunnel.log(&format!("sending {payload_str} to {url}"));
+        self.tunnel
+            .log(&format!("sending \"{payload_str}\" to {url}"));
         let mut builder = self
             .client
             .request(kind.into(), url)

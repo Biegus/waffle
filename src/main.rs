@@ -10,7 +10,7 @@ mod serializer_helper;
 mod tests;
 
 use std::collections::HashSet;
-use std::io::IsTerminal;
+use std::io::{IsTerminal, stderr, stdin, stdout};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::thread::sleep;
@@ -91,10 +91,21 @@ fn construct_tunnel_output_kinds(args: &MainArgs) -> HashSet<TunnelOutputKind> {
     use TunnelOutputKind as T;
     HashSet::from_iter(match (args.logs, args.quiet, args.mute) {
         (_, _, true) => vec![],
-        (_, true, false) => vec![T::Warning, T::Error],
-        (true, false, false) => vec![T::Warning, T::Error, T::Log],
-        (false, false, false) => vec![T::Warning, T::Error],
+        (_, true, false) => vec![T::Warning, T::Error, T::UserInfo],
+        (true, false, false) => vec![T::Warning, T::Error, T::Log, T::UserInfo],
+        (false, false, false) => vec![T::Warning, T::Error, T::UserInfo],
     })
+}
+fn decide_color_stdout(args: &MainArgs, vars: &HashMap<String, String>) -> bool {
+    use crate::cli_api::ColorMode::*;
+    match args.color {
+        Always => true,
+        Auto => stdout().is_terminal(),
+        NoColor => false,
+    }
+}
+fn decide_color_stderr(args: &MainArgs, vars: &HashMap<String, String>) -> bool {
+    return stderr().is_terminal();
 }
 
 fn main() -> Result<(), String> {
@@ -103,13 +114,17 @@ fn main() -> Result<(), String> {
     let vars: HashMap<String, String> = std::env::vars().collect();
     add_context_from_given_env_vars(&mut args, &vars);
 
-    let tunnel = Box::new(StdTunnel::new(construct_tunnel_output_kinds(&args)));
+    let color = decide_color_stdout(&args, &vars);
+    let color_stderr = decide_color_stderr(&args, &vars);
+    let tunnel = Box::new(StdTunnel::new(
+        construct_tunnel_output_kinds(&args),
+        color_stderr,
+    ));
     let org_snapshot = read_snapshot();
     let mut runtime = create_runtime(tunnel, org_snapshot.clone());
 
     let is_terminal = std::io::stdin().is_terminal();
-
-    let mut execution_context = CliExecutionContext::new(args, vars, is_terminal);
+    let mut execution_context = CliExecutionContext::new(args, vars, is_terminal, color);
 
     let code = cli_execution::handle(&mut runtime, &mut execution_context);
     if code == 0 {

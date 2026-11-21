@@ -1,3 +1,4 @@
+use derive_more::Display;
 use itertools::Itertools;
 use jq::JsonFilter;
 use std::{collections::HashMap, net::ToSocketAddrs, str::FromStr};
@@ -46,6 +47,13 @@ impl FromStr for PayloadInput {
 #[derive(Clone)]
 struct CliMap(pub HashMap<String, String>);
 
+#[derive(Clone, ValueEnum, Debug, PartialEq, Copy, Display)]
+pub enum ColorMode {
+    Always,
+    Auto,
+    NoColor,
+}
+
 #[derive(Clone, Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct MainArgs {
@@ -59,7 +67,8 @@ pub struct MainArgs {
     pub mute: bool,
     #[arg(long)]
     pub json: bool,
-
+    #[arg(long, default_value = "auto")]
+    pub color: ColorMode,
     #[arg(long, short)]
     pub app: Option<String>,
     #[arg(long, short)]
@@ -305,13 +314,20 @@ pub fn add_context_from_given_env_vars(
     args: &mut MainArgs,
     vars: &HashMap<String, String>,
 ) -> Vec<EnvWarning> {
-    let coerce_logs = vars.get("WAFFLE_LOGS") == Some(&"1".to_string());
-    let corce_retry = vars.get("WAFFLE_RETRY") == Some(&"1".to_string());
+    let one_string: String = "1".to_string();
+    let some_one = Some(&one_string);
+    let coerce_logs = vars.get("WAFFLE_LOGS") == some_one;
+    let coerce_retry = vars.get("WAFFLE_RETRY") == some_one;
+    let coerce_no_colors =
+        vars.get("NO_COLOR") == some_one || vars.get("WAFFLE_NO_COLOR") == some_one;
     args.logs = args.logs || coerce_logs;
 
-    if corce_retry && let MasterCommand::Send(send) = &mut args.command {
+    if coerce_retry && let MasterCommand::Send(send) = &mut args.command {
         send.retry_on.push(RetryType::Net);
         send.retry_on.dedup();
+    }
+    if coerce_no_colors {
+        args.color = ColorMode::NoColor;
     }
     return vec![];
 }

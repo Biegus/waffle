@@ -2,6 +2,7 @@ use itertools::Itertools;
 use jq::JsonFilter;
 use serde::{Deserialize, Serialize, de};
 
+use crate::cli_api::ColorMode::{self, Always};
 use crate::cli_output_serializers::{serialize_endpoint_long, simple_serialize_endpoint};
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
 use crate::objects::*;
@@ -11,6 +12,7 @@ use colored_json::{prelude::*, to_colored_json_auto};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::io::{IsTerminal, stdin};
 use std::path::Path;
 use std::process::exit;
 use std::str::FromStr;
@@ -22,13 +24,14 @@ pub struct CliExecutionContext {
     pub args: MainArgs,
     pub vars: HashMap<String, String>,
     pub is_terminal: bool,
+    pub color: bool,
 }
 
 pub fn handle(runtime: &mut Runtime, execution_context: &mut CliExecutionContext) -> i32 {
     match handle_internal(runtime, execution_context) {
         Ok(v) => return v,
         Err(msg) => {
-            eprintln!("E: {msg}");
+            runtime.tunnel.error(&format!("{msg}"));
             return 1;
         }
     };
@@ -113,7 +116,12 @@ fn to_formatted_json_string<T: Serialize>(t: T, execution_context: &CliExecution
     const ASSUMUPTION: &'static str = "There's an assumption for block to be json convertable";
     let mut res = serde_json::to_string_pretty(&t).expect(ASSUMUPTION);
     if execution_context.is_terminal {
-        res = res.to_colored_json_auto().expect(ASSUMUPTION);
+        res = res
+            .to_colored_json(match execution_context.color {
+                true => colored_json::ColorMode::On,
+                false => colored_json::ColorMode::Off,
+            })
+            .expect(ASSUMUPTION);
     }
     return res;
 }
@@ -296,6 +304,7 @@ fn handle_internal(
             let payload = payload.map(|t| t.to_string());
             let payload = payload.as_deref();
 
+            let mut counter = 0;
             let result = loop {
                 let maybe_result = r.send(env, endpoint, &params, &send.pparams, payload);
 
@@ -310,7 +319,8 @@ fn handle_internal(
                         break Err(failed).stringify_er()?;
                     }
                     r.tunnel
-                        .user_info(&format!("Sending failed: {failed}, will retry in 3s..."));
+                        .user_info(&format!("Sending failed: {failed}\n\twill retry in 3 s, already retried {counter} times"));
+                    counter += 1;
                     sleep(Duration::from_secs(3));
                     continue;
                 }
