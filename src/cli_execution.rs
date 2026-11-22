@@ -3,7 +3,7 @@ use jq::JsonFilter;
 use serde::{Deserialize, Serialize, de};
 
 use crate::cli_api::ColorMode::{self, Always};
-use crate::cli_output_serializers::{serialize_endpoint_long, simple_serialize_endpoint};
+use crate::cli_output_serializers::{FullSerialize, SerializationContext, StringSerialize};
 use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
 use crate::objects::*;
 use crate::runtime::{AppLink, EnvironmentLink, Runtime, SendError};
@@ -133,6 +133,7 @@ fn handle_internal(
     validate_high_level_valid(&args)?; // fixme: include those additional validation in clap object
     let mut app = None;
     let mut env = None;
+    let serialization_context = SerializationContext::new(execution_context.color);
     if let Some(app_name) = args.app {
         app = Some(r.find_app(Some(app_name.as_str()))?)
     } else if can_app_be_passed(&args.command) {
@@ -183,7 +184,13 @@ fn handle_internal(
                 EndpointsCommand::List(endpoints_list) => match args.json {
                     false => println!(
                         "{}",
-                        (app.get(r).endpoints.iter().map(simple_serialize_endpoint)).join("\n")
+                        (app.get(r)
+                            .endpoints
+                            .iter()
+                            .map(|t| StringSerialize::serialize_flat(t, &serialization_context))
+                            .collect_vec()
+                            .serialize_str_deep(&serialization_context)
+                            .into_string(0, true))
                     ),
                     true => println!(
                         "{}",
@@ -221,13 +228,35 @@ fn handle_internal(
                 Some(EndpointCommand::Rename(endpoint_rename)) => {
                     endpoint.get_mut(r).name = endpoint_rename.to
                 }
-                None => match args.json {
-                    false => println!("{}", serialize_endpoint_long(&endpoint.get(r))),
-                    true => println!(
-                        "{}",
-                        to_formatted_json_string(&endpoint.get(r).schema, &execution_context)
-                    ),
-                },
+                None => {
+                    let selector = endpoint_setup.selector;
+                    let endpoint_obj = endpoint.get(r);
+                    let empty_vec = vec![];
+                    let obj: &dyn FullSerialize = match selector {
+                        EndpointGetPart::Response => endpoint_obj
+                            .schema
+                            .as_ref()
+                            .map(|t| &t.responses_schema)
+                            .unwrap_or(&empty_vec),
+                        EndpointGetPart::Request => {
+                            &endpoint_obj.schema.clone().and_then(|t| t.request_schema)
+                        }
+                        EndpointGetPart::Short => endpoint_obj,
+                        EndpointGetPart::Full => endpoint_obj,
+                    };
+                    match args.json {
+                        false => println!(
+                            "{}",
+                            if selector == EndpointGetPart::Short {
+                                obj.serialize_flat(&serialization_context)
+                            } else {
+                                obj.serialize_str_deep(&serialization_context)
+                                    .into_string(0, true)
+                            }
+                        ),
+                        true => println!("{}", to_formatted_json_string(obj, &execution_context)),
+                    }
+                }
             }
         }
         MasterCommand::Environment(environment_setup) => {

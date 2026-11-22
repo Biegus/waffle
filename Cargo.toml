@@ -23,3 +23,4 @@ serde_json = {version="1.0.150", features=["raw_value"]}
 serde_yaml = "0.9.34"
 sysdirs = "0.9.4"
 thiserror = "2.0.21"
+typetag = "0.2.23"

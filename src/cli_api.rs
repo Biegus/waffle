@@ -128,6 +128,8 @@ pub struct EndpointSetup {
     pub name: String,
     #[command(subcommand)]
     pub command: Option<EndpointCommand>,
+    #[arg(long, short, default_value = "full")]
+    pub selector: EndpointGetPart,
 }
 #[derive(Clone, Subcommand, Debug)]
 pub enum EndpointsCommand {
@@ -141,6 +143,13 @@ pub enum EndpointsCommand {
 #[derive(Clone, Subcommand, Debug)]
 pub enum EndpointCommand {
     Rename(EndpointRename),
+}
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum EndpointGetPart {
+    Response,
+    Request,
+    Short,
+    Full,
 }
 #[derive(Clone, Args, Debug)]
 pub struct EndpointRename {
