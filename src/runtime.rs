@@ -78,6 +78,11 @@ impl EndpointLink {
         return &runtime.apps[self.0].endpoints[self.1];
     }
     pub fn get_mut(self, runtime: &mut Runtime) -> &mut Endpoint {
+        let endpoint = self.get_mut_dont_pollute(runtime);
+        endpoint.pure = false;
+        return endpoint;
+    }
+    pub fn get_mut_dont_pollute(self, runtime: &mut Runtime) -> &mut Endpoint {
         return &mut runtime.apps[self.0].endpoints[self.1];
     }
 }
@@ -159,6 +164,7 @@ impl Runtime {
         name: String,
         kind: HTTPMethod,
         schema: Option<EndpointSchema>,
+        pure: bool,
     ) -> EndpointLink {
         let top_index = app.get(self).endpoints.len();
         app.get_mut(self).endpoints.push(Endpoint {
@@ -166,8 +172,12 @@ impl Runtime {
             kind: kind,
             name,
             schema: schema,
+            pure: pure,
         });
         return EndpointLink(app.0, top_index);
+    }
+    pub fn get_endpoints(&self, app: AppLink) -> &Vec<Endpoint> {
+        return &app.get(self).endpoints;
     }
     pub fn get_endpoint<'a>(&'a self, app: AppLink, name: &str) -> Option<EndpointLink> {
         let index = app
@@ -421,9 +431,10 @@ impl Runtime {
                         name.replace(".", "").to_lowercase(),
                         method,
                         None,
+                        true,
                     )
                 });
-                endpoint.get_mut(self).schema = Some(
+                endpoint.get_mut_dont_pollute(self).schema = Some(
                     openapi_helper::build_endpoint_schema_from_openapi_schema(&spec, &op),
                 )
             }

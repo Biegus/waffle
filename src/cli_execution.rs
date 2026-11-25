@@ -1,18 +1,24 @@
 use itertools::Itertools;
 use jq::JsonFilter;
+use regex::Regex;
 use serde::{Deserialize, Serialize, de};
+use tap::Pipe;
 
 use crate::cli_api::ColorMode::{self, Always};
 use crate::cli_output_serializers::{FullSerialize, SerializationContext, StringSerialize};
-use crate::helper::{ResultExtension, StringResultExtension, to_json_or_nice_error};
+use crate::helper::{
+    FoldExpression, ResultExtension, StringResultExtension, to_json_or_nice_error,
+};
 use crate::objects::*;
-use crate::runtime::{AppLink, EnvironmentLink, Runtime, SendError};
+use crate::runtime::{AppLink, EndpointLink, EnvironmentLink, Runtime, SendError};
 use crate::{cli_api::*, helper};
 use colored_json::{prelude::*, to_colored_json_auto};
 use serde_json::{self, Map, json};
 use std::collections::{BTreeMap, HashMap};
+use std::convert::identity;
 use std::fs;
 use std::io::{IsTerminal, stdin};
+use std::mem::take;
 use std::path::Path;
 use std::process::exit;
 use std::str::FromStr;
@@ -179,24 +185,64 @@ fn handle_internal(
             let app = require_app_set(app)?;
             match endpoints_setup.command {
                 EndpointsCommand::Create(EndpointCreate { name, url, kind }) => {
-                    r.create_endpoint(app, url, name, kind, None);
+                    r.create_endpoint(app, url, name, kind, None, false);
                 }
-                EndpointsCommand::List(endpoints_list) => match args.json {
-                    false => println!(
-                        "{}",
-                        (app.get(r)
-                            .endpoints
-                            .iter()
-                            .map(|t| StringSerialize::serialize_flat(t, &serialization_context))
-                            .collect_vec()
-                            .serialize_str_deep(&serialization_context)
-                            .into_string(0, true))
-                    ),
-                    true => println!(
-                        "{}",
-                        to_formatted_json_string(&app.get(r).endpoints, execution_context)
-                    ),
-                },
+                EndpointsCommand::List(endpoints_list) => {
+                    let mut conditions: FoldExpression<Endpoint, _, _> = FoldExpression::all_new();
+                    if let Some(filter) = endpoints_list.filter {
+                        let regex = Regex::new(&filter)
+                            .str_er_with_context("Failed to parse filter regex")?;
+                        conditions
+                            .add((move |t: &Endpoint| regex.is_match(&t.name)).pipe(Box::new));
+                    }
+                    if endpoints_list.only_pure {
+                        conditions.add((move |t: &Endpoint| t.pure).pipe(Box::new))
+                    }
+
+                    match endpoints_list.action {
+                        ListAction::Display => {
+                            let endpoints =
+                                app.get(r).endpoints.iter().filter(|t| conditions.calc(t));
+                            match args.json {
+                                false => println!(
+                                    "{}",
+                                    endpoints
+                                        .map(|t| StringSerialize::serialize_flat(
+                                            t,
+                                            &serialization_context
+                                        ))
+                                        .collect_vec()
+                                        .serialize_str_deep(&serialization_context)
+                                        .into_string(0, true)
+                                ),
+
+                                true => println!(
+                                    "{}",
+                                    to_formatted_json_string(
+                                        endpoints.collect_vec(),
+                                        execution_context
+                                    )
+                                ),
+                            }
+                        }
+                        ListAction::Delete => {
+                            //replace code could be better
+                            let endpoints = take(&mut app.get_mut(r).endpoints);
+                            let org_size = endpoints.len();
+
+                            let endpoints = endpoints
+                                .into_iter()
+                                .filter(|t| !conditions.calc(t))
+                                .collect_vec();
+                            drop(conditions);
+                            app.get_mut(r).endpoints = endpoints;
+                            r.tunnel.user_info(&format!(
+                                "Deleted {}",
+                                org_size - app.get(r).endpoints.len()
+                            ));
+                        }
+                    }
+                }
                 EndpointsCommand::LoadSchema(load_schema) => {
                     let extension = Path::new(&load_schema.file)
                         .extension()

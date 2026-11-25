@@ -137,9 +137,9 @@ pub enum EndpointsCommand {
     Create(EndpointCreate),
     #[clap(visible_alias = "l")]
     List(EndpointsList),
-
     LoadSchema(LoadSchema),
 }
+
 #[derive(Clone, Subcommand, Debug)]
 pub enum EndpointCommand {
     Rename(EndpointRename),
@@ -190,7 +190,7 @@ pub struct Send {
     pub params: Option<Vec<(String, String)>>,
 
     //entry
-    #[arg(long)]
+    #[arg(long, short)]
     pub input: Option<PayloadInput>,
 
     // mods
@@ -211,8 +211,20 @@ pub struct EndpointCreate {
     pub kind: HTTPMethod,
     pub url: String,
 }
+#[derive(ValueEnum, Clone, Debug)]
+pub enum ListAction {
+    Display,
+    Delete,
+}
 #[derive(Clone, Args, Debug)]
-pub struct EndpointsList {}
+pub struct EndpointsList {
+    pub filter: Option<String>,
+    #[arg(long, short('p'))]
+    pub only_pure: bool,
+    #[clap(default_value = "display")]
+    #[arg(short, long)]
+    pub action: ListAction,
+}
 #[derive(Clone, Args, Debug)]
 pub struct AppsSetup {
     #[command(subcommand)]

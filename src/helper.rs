@@ -104,3 +104,39 @@ impl<T> StringResultExtension<T> for Result<T, String> {
         self.str_er_with_context(context)
     }
 }
+
+pub struct FoldExpression<T1, T2, T3> {
+    expression_list: Vec<Box<dyn Fn(&T1) -> T2>>,
+    fold_seed: T3,
+    fold_expression: fn(T3, T2) -> T3,
+}
+
+impl<T1, T2, T3> FoldExpression<T1, T2, T3>
+where
+    T2: Copy,
+    T3: Copy,
+{
+    pub fn new(seed: T3, expression: fn(T3, T2) -> T3) -> Self {
+        return Self {
+            expression_list: vec![],
+            fold_seed: seed,
+            fold_expression: expression,
+        };
+    }
+
+    pub fn calc(&self, v: &T1) -> T3 {
+        return self
+            .expression_list
+            .iter()
+            .map(|t| t(&v))
+            .fold(self.fold_seed, self.fold_expression);
+    }
+    pub fn add(&mut self, v: Box<dyn Fn(&T1) -> T2>) {
+        self.expression_list.push(v);
+    }
+}
+impl<T> FoldExpression<T, bool, bool> {
+    pub fn all_new() -> Self {
+        return Self::new(true, |a, b| a && b);
+    }
+}

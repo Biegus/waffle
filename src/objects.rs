@@ -62,6 +62,8 @@ pub struct Endpoint {
     pub kind: HTTPMethod,
     pub name: String,
     pub schema: Option<EndpointSchema>,
+    #[serde(default)]
+    pub pure: bool,
 }
 
 #[derive(new, Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
